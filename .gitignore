@@ -1,0 +1,10 @@
+# Dossiers de build CMake
+/build*/
+/cmake-build-*/
+
+# IDE
+*.user
+.vscode/
+.idea/
+.cache/
+compile_commands.json
