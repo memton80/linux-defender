@@ -1,0 +1,6 @@
+linux-defender (0.0.0~dev) unstable; urgency=medium
+
+  * Paquet construit à partir des sources du dépôt. La version est
+    remplacée par packaging/build-deb.sh.
+
+ -- memton80 <memton80@users.noreply.github.com>  Thu, 24 Sep 2026 09:00:00 +0000

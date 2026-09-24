@@ -1,7 +1,15 @@
 cmake_minimum_required(VERSION 3.21)
 
+# Version de l'application (--version) et des paquets. La CI la déduit du tag
+# git : v1.2.3 donne 1.2.3 ; hors tag, c'est 0.0.0-dev (voir packaging/version.sh).
+set(DEFENDER_VERSION "0.0.0-dev" CACHE STRING "Version de l'application")
+string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" DEFENDER_VERSION_NUMBER "${DEFENDER_VERSION}")
+if(NOT DEFENDER_VERSION_NUMBER)
+    message(FATAL_ERROR "DEFENDER_VERSION doit commencer par X.Y.Z (reçu : « ${DEFENDER_VERSION} »)")
+endif()
+
 project(linux-defender
-    VERSION 0.1.0
+    VERSION ${DEFENDER_VERSION_NUMBER}
     DESCRIPTION "Interface graphique légère pour l'antivirus ClamAV (clamd)"
     HOMEPAGE_URL "https://github.com/memton80/linux-defender"
     LANGUAGES CXX
@@ -25,6 +33,10 @@ option(DEFENDER_BUILD_TESTS "Compiler les tests unitaires" ON)
 # Fedora 44 fournit une version plus récente, compatible.
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Network DBus Widgets)
 qt_standard_project_setup()  # active AUTOMOC et charge GNUInstallDirs
+
+# Pas de RPATH dans le binaire installé : il n'utilise que des bibliothèques du
+# système (c'est aussi ce qu'exigent les règles des paquets Debian et Fedora).
+set(CMAKE_SKIP_INSTALL_RPATH ON)
 
 add_compile_options(-Wall -Wextra -Wpedantic)
 

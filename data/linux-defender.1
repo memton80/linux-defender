@@ -1,0 +1,51 @@
+.\" -*- coding: UTF-8 -*-
+.TH LINUX-DEFENDER 1 "2026" "linux-defender" "Commandes utilisateur"
+.SH NOM
+linux-defender \- interface graphique légère pour l'antivirus ClamAV
+.SH SYNOPSIS
+.B linux-defender
+.RB [ \-\-background ]
+.RB [ \-s | \-\-socket
+.IR chemin ]
+.SH DESCRIPTION
+.B linux-defender
+est une interface Qt pour le démon
+.BR clamd (8)
+de ClamAV. Elle affiche l'état de clamd dans la zone de notification, scanne
+à la demande des fichiers et des dossiers, et scanne automatiquement les clés
+USB et cartes mémoire au moment de leur montage.
+.PP
+Pour scanner, l'application ouvre elle-même chaque fichier et le transmet à
+clamd (commande FILDES) : clamd peut ainsi analyser le dossier personnel et les
+supports amovibles sans avoir le droit de les lire lui-même.
+.PP
+Une seule instance tourne à la fois : relancer la commande réaffiche la fenêtre
+de l'instance existante.
+.SH OPTIONS
+.TP
+.B \-\-background
+Démarre sans afficher la fenêtre (icône de notification seulement). C'est
+l'option utilisée par le démarrage automatique de session.
+.TP
+.BR \-s ", " \-\-socket " \fIchemin\fR"
+Chemin du socket Unix de clamd. Par défaut : celui des paramètres, sinon la
+directive LocalSocket de la configuration de clamd, sinon un emplacement usuel.
+.TP
+.BR \-h ", " \-\-help
+Affiche l'aide.
+.TP
+.BR \-v ", " \-\-version
+Affiche la version.
+.SH FICHIERS
+.TP
+.I ~/.config/linux-defender/linux-defender.conf
+Paramètres de l'application.
+.TP
+.I ~/.config/autostart/linux-defender.desktop
+Présent quand le démarrage automatique est activé.
+.SH VOIR AUSSI
+.BR clamd (8),
+.BR clamdscan (1),
+.BR clamd.conf (5)
+.PP
+https://github.com/memton80/linux-defender

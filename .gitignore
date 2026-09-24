@@ -2,6 +2,11 @@
 /build*/
 /cmake-build-*/
 
+# Packaging : paquets produits, copie temporaire de packaging/debian, build de debhelper
+/dist/
+/debian/
+/obj-*/
+
 # IDE
 *.user
 .vscode/

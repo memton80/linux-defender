@@ -1,0 +1,32 @@
+Source: linux-defender
+Section: utils
+Priority: optional
+Maintainer: memton80 <memton80@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13),
+               cmake (>= 3.21),
+               qt6-base-dev (>= 6.4),
+               dbus-daemon <!nocheck>,
+Standards-Version: 4.6.2
+Homepage: https://github.com/memton80/linux-defender
+Rules-Requires-Root: no
+
+Package: linux-defender
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         libqt6svg6,
+         qt6-qpa-plugins,
+Recommends: clamav-daemon,
+            udisks2,
+Description: lightweight Qt interface for the ClamAV antivirus
+ Linux Defender is a native Qt 6 (QtWidgets) front-end for the ClamAV daemon
+ (clamd), designed for KDE Plasma and its Breeze theme.
+ .
+ Features:
+  - on-demand scan of files and folders, with progress and a list of results;
+  - automatic scan of USB keys and memory cards when they are mounted;
+  - system tray icon showing the clamd status, with desktop notifications.
+ .
+ Files are opened by the application and passed to clamd (FILDES), so clamd
+ can scan the home directory and removable media without reading them itself.
+ clamd itself is only recommended: the socket path is configurable.

@@ -1,0 +1,129 @@
+# Compilation, tests et paquets de Linux Defender.
+#
+# - Chaque push sur main (et chaque pull request vers main) : compilation,
+#   tests, puis paquets .deb, .rpm et archive .tar.gz, téléchargeables dans
+#   l'onglet Actions (section « Artifacts » du run).
+# - Tag vX.Y.Z : la même chose, puis une release GitHub avec les 3 fichiers.
+# - Lancement manuel possible depuis l'onglet Actions (« Run workflow »).
+#
+# Les étapes appellent les scripts de packaging/, utilisables aussi en local.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu:
+    name: Ubuntu 24.04 — tests, .deb et .tar.gz
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dépendances
+        # qt6-base-dev fournit tous les modules utilisés (Core, Network, DBus,
+        # Widgets, Test). dbus-daemon : bus privé pour le test des clés USB.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build qt6-base-dev dbus-daemon \
+            dpkg-dev debhelper
+
+      - name: Version
+        run: echo "VERSION=$(packaging/version.sh)" >> "$GITHUB_ENV"
+
+      - name: Compilation
+        # Options de durcissement de Debian, comme pour le paquet .deb : ce
+        # binaire est aussi celui de l'archive .tar.gz.
+        run: |
+          eval "$(DEB_BUILD_MAINT_OPTIONS=hardening=+all dpkg-buildflags --export=sh)"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DDEFENDER_VERSION="$VERSION"
+          cmake --build build
+
+      - name: Tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Paquet .deb
+        run: packaging/build-deb.sh
+
+      - name: Archive .tar.gz
+        run: packaging/build-tarball.sh build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-defender-ubuntu
+          path: |
+            dist/*.deb
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  fedora:
+    name: Fedora 44 — tests et .rpm
+    runs-on: ubuntu-24.04
+    container: fedora:44
+    steps:
+      - name: Dépendances
+        # git : pour que actions/checkout fasse un vrai clone.
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            git cmake cmake-rpm-macros ninja-build gcc-c++ qt6-qtbase-devel \
+            dbus-daemon desktop-file-utils rpm-build
+
+      - uses: actions/checkout@v4
+
+      - name: Version
+        run: echo "VERSION=$(packaging/version.sh)" >> "$GITHUB_ENV"
+
+      - name: Compilation
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DDEFENDER_VERSION="$VERSION"
+          cmake --build build
+
+      - name: Tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Paquet .rpm
+        run: packaging/build-rpm.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-defender-fedora
+          path: dist/*.rpm
+          if-no-files-found: error
+
+  release:
+    name: Release GitHub
+    if: github.ref_type == 'tag'
+    needs: [ubuntu, fedora]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # création de la release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Création de la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          ls -l dist
+          # Tag avec suffixe (v1.0.0-rc1...) : marqué comme préversion.
+          prerelease=""
+          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
+          # Relance du workflow : la release existe déjà, on remplace seulement les fichiers.
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "Linux Defender $TAG" --generate-notes $prerelease
+          fi
+          gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber

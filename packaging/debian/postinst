@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+# Première installation seulement : rappel des réglages nécessaires côté clamd.
+if [ "$1" = "configure" ] && [ -z "$2" ]; then
+    cat <<'EOF'
+
+Linux Defender est installé. Il a besoin du démon clamd (paquet clamav-daemon),
+dont le socket est en général /run/clamav/clamd.ctl.
+Si l'application signale « Permission refusée », ajoutez votre utilisateur au
+groupe qu'elle indique (en général « clamav »), puis reconnectez-vous :
+    sudo usermod -aG clamav $USER
+
+EOF
+fi
+
+#DEBHELPER#
+
+exit 0

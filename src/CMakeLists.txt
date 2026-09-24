@@ -44,7 +44,7 @@ qt_add_executable(linux-defender
     ui/TrayIcon.h
     ui/TrayIcon.cpp
 )
-target_compile_definitions(linux-defender PRIVATE DEFENDER_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(linux-defender PRIVATE DEFENDER_VERSION="${DEFENDER_VERSION}")
 target_link_libraries(linux-defender PRIVATE defender_core defender_system Qt6::Widgets)
 
 # Icônes SVG intégrées au binaire, accessibles via ":/icons/<fichier>.svg".
@@ -65,3 +65,4 @@ qt_add_resources(linux-defender "icons"
 install(TARGETS linux-defender RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES ${DATA_DIR}/linux-defender.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(FILES ${DATA_DIR}/icons/linux-defender.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+install(FILES ${DATA_DIR}/linux-defender.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)

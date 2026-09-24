@@ -1,0 +1,15 @@
+#!/usr/bin/make -f
+# Construction du paquet avec debhelper et CMake.
+
+# Toutes les protections de Debian (pile, PIE, RELRO, fortify...) : c'est un antivirus.
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+include /usr/share/dpkg/pkg-info.mk
+
+%:
+	dh $@ --buildsystem=cmake
+
+# Version affichée par l'application : celle du paquet, avec « - » au lieu de
+# « ~ » (0.0.0~dev redevient 0.0.0-dev).
+override_dh_auto_configure:
+	dh_auto_configure -- -DDEFENDER_VERSION=$(subst ~,-,$(DEB_VERSION_UPSTREAM))

@@ -1,0 +1,8 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: linux-defender
+Source: https://github.com/memton80/linux-defender
+
+Files: *
+Copyright: 2026 memton80
+License: all-rights-reserved
+ Aucune licence n'a encore été choisie par l'auteur : tous droits réservés.

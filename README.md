@@ -1,97 +1,67 @@
 # linux-defender
 
+[![CI](https://github.com/memton80/linux-defender/actions/workflows/ci.yml/badge.svg)](https://github.com/memton80/linux-defender/actions/workflows/ci.yml)
+
 Interface graphique native et légère pour l'antivirus [ClamAV](https://www.clamav.net/),
 pensée pour KDE Plasma (thème Breeze clair/sombre automatique).
 Écrite en C++ / Qt 6 (QtWidgets). Elle communique directement avec le démon `clamd`
 par son socket Unix, avec le protocole natif de clamd.
 
-> **État : étape 3.** Scan à la demande de fichiers et de dossiers, scan automatique des clés
-> USB, icône dans la zone de notification avec notifications, instance unique, démarrage
-> automatique et paramètres. Prochaine étape : la CI et les paquets `.deb` / `.rpm`.
+Fonctions : scan à la demande de fichiers et de dossiers, scan automatique des clés USB au
+montage, icône dans la zone de notification avec l'état de clamd et des notifications,
+démarrage automatique à l'ouverture de session.
 
-## Arborescence
+## Installation
 
-```
-linux-defender/
-├── CMakeLists.txt            # projet, options, dépendances Qt
-├── src/
-│   ├── CMakeLists.txt        # cibles : defender_core, defender_system (bibliothèques) + linux-defender
-│   ├── main.cpp              # point d'entrée : relie le cœur, le système et l'UI
-│   ├── core/                 # logique métier : QtCore + QtNetwork, aucune dépendance à l'UI
-│   │   ├── ClamdClient.*     # communication avec clamd (socket Unix, protocole natif)
-│   │   ├── ClamdWatcher.*    # vérification périodique de l'état de clamd
-│   │   ├── ScanJob.*         # un scan (FILDES), dans son propre thread
-│   │   ├── ScanManager.*     # lance les scans, un à la fois, avec file d'attente
-│   │   └── Settings.*        # réglages (QSettings)
-│   ├── system/               # intégration au système, sans UI
-│   │   ├── UsbMonitor.*      # montage des clés USB (UDisks2 via D-Bus)
-│   │   ├── SingleInstance.*  # une seule instance à la fois
-│   │   └── Autostart.*       # démarrage automatique (~/.config/autostart)
-│   └── ui/                   # interface QtWidgets
-│       ├── MainWindow.*      # fenêtre principale
-│       ├── ScanPanel.*       # section « Scan » : boutons, progression, résultats
-│       ├── ScanResultsModel.*# liste des fichiers analysés
-│       ├── SettingsDialog.*  # dialogue « Paramètres »
-│       ├── TrayIcon.*        # icône, menu et notifications de la zone de notification
-│       └── StatusDisplay.*   # icônes et textes partagés
-├── data/
-│   ├── icons/*.svg           # icônes SVG (placeholders à remplacer)
-│   └── linux-defender.desktop
-├── tests/
-│   ├── FakeClamd.h           # faux clamd (FILDES compris) : pas besoin de clamd pour les tests
-│   └── tst_*.cpp             # un fichier de tests par classe
-└── .github/workflows/        # (à venir) CI : binaire, .deb, .rpm
-```
+Les paquets de chaque version sont sur la page des releases :
+**<https://github.com/memton80/linux-defender/releases>**.
 
-## Dépendances
+Chaque release contient trois fichiers (remplacez `X.Y.Z` par la version) :
 
-### Fedora (44 et suivantes)
+| Fichier | Pour |
+|---|---|
+| `linux-defender-X.Y.Z-1.fc44.x86_64.rpm` | Fedora 44 |
+| `linux-defender_X.Y.Z_amd64.deb` | Ubuntu 24.04 et suivantes |
+| `linux-defender-X.Y.Z-linux-x86_64.tar.gz` | toute distribution avec Qt 6.4 ou plus récent |
+
+### Fedora
 
 ```sh
-# Compilation
-sudo dnf install cmake gcc-c++ ninja-build qt6-qtbase-devel
-
-# À l'exécution : icônes SVG et UDisks2 (clés USB), déjà présents sur Fedora KDE
-sudo dnf install qt6-qtsvg udisks2
-
-# ClamAV
-sudo dnf install clamav clamd clamav-update
+sudo dnf install ./linux-defender-X.Y.Z-1.fc44.x86_64.rpm
 ```
 
-### Debian / Ubuntu (24.04 et suivantes)
+### Debian / Ubuntu
 
 ```sh
-# Compilation
-sudo apt install build-essential cmake ninja-build qt6-base-dev
-
-# À l'exécution : icônes SVG et UDisks2 (clés USB)
-sudo apt install libqt6svg6 udisks2
-
-# ClamAV
-sudo apt install clamav-daemon clamav-freshclam
+sudo apt install ./linux-defender_X.Y.Z_amd64.deb
 ```
 
-## Compilation
+Les paquets recommandent clamd (`clamd` et `clamav-update` sous Fedora, `clamav-daemon` sous
+Debian/Ubuntu) sans l'exiger : le socket étant configurable, clamd peut tourner ailleurs. Pour ne
+pas l'installer, ajoutez `--setopt=install_weak_deps=False` (dnf) ou `--no-install-recommends` (apt).
+Il faut ensuite configurer clamd : voir [Configurer clamd](#configurer-clamd).
+
+Désinstallation : `sudo dnf remove linux-defender` ou `sudo apt remove linux-defender`.
+
+### Archive .tar.gz (sans paquet)
+
+L'archive contient le binaire et ses fichiers d'intégration au bureau, organisés comme un
+préfixe d'installation (`bin/`, `share/`). Elle a besoin de Qt 6.4 ou plus récent (modules
+de base et plugin SVG) déjà installé sur le système.
 
 ```sh
-cmake -B build -G Ninja
-cmake --build build
-ctest --test-dir build --output-on-failure   # tests unitaires
+tar -xzf linux-defender-X.Y.Z-linux-x86_64.tar.gz
+./linux-defender-X.Y.Z-linux-x86_64/bin/linux-defender
+
+# Ou installation pour votre utilisateur seulement (menu des applications compris) :
+cp -r linux-defender-X.Y.Z-linux-x86_64/bin linux-defender-X.Y.Z-linux-x86_64/share ~/.local/
 ```
 
-Les tests n'ont besoin ni de clamd ni d'UDisks2 : ils utilisent un faux clamd et un faux
-service UDisks2. Le test des clés USB démarre son propre bus D-Bus avec `dbus-run-session`
-(paquet `dbus-daemon`, présent sur la plupart des systèmes) ; sans lui, ce test est ignoré.
+### Versions de développement
 
-Le binaire se trouve dans `build/bin/linux-defender`.
-
-Option CMake disponible : `-DDEFENDER_BUILD_TESTS=OFF` pour ne pas compiler les tests.
-
-Installation (binaire, fichier `.desktop` et icône) :
-
-```sh
-sudo cmake --install build --prefix /usr/local
-```
+Chaque push sur `main` produit aussi les trois fichiers, en version `0.0.0-dev` : onglet
+[Actions](https://github.com/memton80/linux-defender/actions/workflows/ci.yml), choisir un run, section « Artifacts »
+(connexion à GitHub nécessaire).
 
 ## Configurer clamd
 
@@ -149,11 +119,16 @@ sudo setsebool -P antivirus_can_scan_system 1
 
 ## Utilisation
 
+« Linux Defender » est dans le menu des applications, ou en ligne de commande :
+
 ```sh
-./build/bin/linux-defender                           # ouvre la fenêtre, socket détecté automatiquement
-./build/bin/linux-defender --background              # démarre directement dans la zone de notification
-./build/bin/linux-defender --socket /chemin/clamd.sock
+linux-defender                           # ouvre la fenêtre, socket détecté automatiquement
+linux-defender --background              # démarre directement dans la zone de notification
+linux-defender --socket /chemin/clamd.sock
 ```
+
+Depuis une compilation des sources, le binaire est `build/bin/linux-defender`. Aide complète :
+`man linux-defender`.
 
 Fermer la fenêtre ne quitte pas l'application : elle reste active dans la zone de notification.
 - Clic gauche sur l'icône : afficher ou masquer la fenêtre.
@@ -204,12 +179,146 @@ Le socket utilisé est, dans l'ordre :
 3. la directive `LocalSocket` de `/etc/clamd.d/scan.conf`, `/etc/clamav/clamd.conf` ou `/etc/clamd.conf` ;
 4. sinon, les emplacements usuels `/run/clamd.scan/clamd.sock` (Fedora) et `/run/clamav/clamd.ctl` (Debian/Ubuntu).
 
+## Compilation depuis les sources
+
+### Dépendances
+
+#### Fedora (44 et suivantes)
+
+```sh
+# Compilation
+sudo dnf install cmake gcc-c++ ninja-build qt6-qtbase-devel
+
+# À l'exécution : icônes SVG et UDisks2 (clés USB), déjà présents sur Fedora KDE
+sudo dnf install qt6-qtsvg udisks2
+
+# ClamAV
+sudo dnf install clamav clamd clamav-update
+```
+
+#### Debian / Ubuntu (24.04 et suivantes)
+
+```sh
+# Compilation
+sudo apt install build-essential cmake ninja-build qt6-base-dev
+
+# À l'exécution : icônes SVG et UDisks2 (clés USB)
+sudo apt install libqt6svg6 udisks2
+
+# ClamAV
+sudo apt install clamav-daemon clamav-freshclam
+```
+
+### Compilation
+
+```sh
+cmake -B build -G Ninja
+cmake --build build
+ctest --test-dir build --output-on-failure   # tests unitaires
+```
+
+Les tests n'ont besoin ni de clamd ni d'UDisks2 : ils utilisent un faux clamd et un faux
+service UDisks2. Le test des clés USB démarre son propre bus D-Bus avec `dbus-run-session`
+(paquet `dbus-daemon`, présent sur la plupart des systèmes) ; sans lui, ce test est ignoré.
+
+Le binaire se trouve dans `build/bin/linux-defender`.
+
+Option CMake disponible : `-DDEFENDER_BUILD_TESTS=OFF` pour ne pas compiler les tests.
+
+Installation (binaire, fichier `.desktop` et icône) :
+
+```sh
+sudo cmake --install build --prefix /usr/local
+```
+
+## Paquets et CI
+
+Le workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) tourne à chaque push sur
+`main`, à chaque pull request vers `main`, sur chaque tag `vX.Y.Z`, ou à la demande (onglet
+Actions, « Run workflow »). Deux jobs en parallèle :
+
+- **Ubuntu 24.04** : compilation, tests, paquet `.deb`, archive `.tar.gz` ;
+- **Fedora 44** (conteneur) : compilation, tests, paquet `.rpm`.
+
+Les tests passent avant toute création de paquet : si un test échoue, aucun paquet n'est
+produit. Ils sont aussi relancés pendant la construction de chaque paquet.
+
+### Publier une version
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Le workflow crée alors la release GitHub avec les trois fichiers. Un tag avec suffixe
+(`v0.1.0-rc1`) crée une préversion.
+
+La version vient du tag : `v1.2.3` donne `1.2.3`. Hors tag, c'est `0.0.0-dev`, notée
+`0.0.0~dev` dans les paquets (le `~` classe cette version avant toute version publiée).
+
+### Construire les paquets en local
+
+Les scripts de `packaging/` sont ceux qu'utilise la CI (à lancer à la racine du dépôt) :
+
+```sh
+packaging/build-deb.sh              # Debian/Ubuntu : dpkg-dev, debhelper, + dépendances de compilation
+packaging/build-rpm.sh              # Fedora : rpm-build, cmake-rpm-macros, + dépendances de compilation
+packaging/build-tarball.sh build    # à partir d'un dossier de build déjà compilé
+```
+
+Les fichiers produits sont dans `dist/`. Les recettes des paquets sont dans `packaging/debian/`
+(`control`, `rules`, `postinst`...) et `packaging/rpm/linux-defender.spec`.
+
+## Arborescence
+
+```
+linux-defender/
+├── CMakeLists.txt            # projet, options, dépendances Qt
+├── src/
+│   ├── CMakeLists.txt        # cibles : defender_core, defender_system (bibliothèques) + linux-defender
+│   ├── main.cpp              # point d'entrée : relie le cœur, le système et l'UI
+│   ├── core/                 # logique métier : QtCore + QtNetwork, aucune dépendance à l'UI
+│   │   ├── ClamdClient.*     # communication avec clamd (socket Unix, protocole natif)
+│   │   ├── ClamdWatcher.*    # vérification périodique de l'état de clamd
+│   │   ├── ScanJob.*         # un scan (FILDES), dans son propre thread
+│   │   ├── ScanManager.*     # lance les scans, un à la fois, avec file d'attente
+│   │   └── Settings.*        # réglages (QSettings)
+│   ├── system/               # intégration au système, sans UI
+│   │   ├── UsbMonitor.*      # montage des clés USB (UDisks2 via D-Bus)
+│   │   ├── SingleInstance.*  # une seule instance à la fois
+│   │   └── Autostart.*       # démarrage automatique (~/.config/autostart)
+│   └── ui/                   # interface QtWidgets
+│       ├── MainWindow.*      # fenêtre principale
+│       ├── ScanPanel.*       # section « Scan » : boutons, progression, résultats
+│       ├── ScanResultsModel.*# liste des fichiers analysés
+│       ├── SettingsDialog.*  # dialogue « Paramètres »
+│       ├── TrayIcon.*        # icône, menu et notifications de la zone de notification
+│       └── StatusDisplay.*   # icônes et textes partagés
+├── data/
+│   ├── icons/*.svg           # icônes SVG (placeholders à remplacer)
+│   ├── linux-defender.desktop
+│   └── linux-defender.1      # page de manuel (man linux-defender)
+├── packaging/
+│   ├── version.sh            # version à partir du tag git
+│   ├── build-deb.sh, build-rpm.sh, build-tarball.sh
+│   ├── debian/               # paquet .deb (debhelper)
+│   └── rpm/                  # paquet .rpm (fichier spec)
+├── tests/
+│   ├── FakeClamd.h           # faux clamd (FILDES compris) : pas besoin de clamd pour les tests
+│   └── tst_*.cpp             # un fichier de tests par classe
+└── .github/workflows/ci.yml  # CI : tests, .deb, .rpm, .tar.gz, releases
+```
+
 ## Feuille de route
 
 - [x] Étape 1 : `ClamdClient`, connexion au socket et `PING`
 - [x] Étape 2 : icône dans la zone de notification, fenêtre principale, statut de clamd
 - [x] Étape 3 : scan à la demande (FILDES), scan automatique des clés USB (UDisks2), instance
       unique, démarrage automatique, paramètres
-- [ ] Étape 4 : CI GitHub Actions (binaire, `.deb`, `.rpm`)
+- [x] Étape 4 : CI GitHub Actions, paquets `.deb` et `.rpm`, archive `.tar.gz`, releases
 - [ ] Plus tard : protection en temps réel (`clamonacc`), quarantaine, historique, planification,
       scans en parallèle, KNotifications
+
+## Licence
+
+Aucune licence n'a encore été choisie : en attendant, tous droits réservés.
