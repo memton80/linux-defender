@@ -141,4 +141,40 @@ QString pathsText(const QStringList &paths)
     return plural(paths.size(), "%1 élément", "%1 éléments");
 }
 
+QIcon onAccessIcon(OnAccessController::State state)
+{
+    switch (state) {
+    case OnAccessController::State::Active:
+        return svgIcon(QStringLiteral(":/icons/status-ok.svg"));
+    case OnAccessController::State::Failed:
+        return svgIcon(QStringLiteral(":/icons/status-error.svg"));
+    case OnAccessController::State::NotInstalled:
+    case OnAccessController::State::ServiceMissing:
+        return svgIcon(QStringLiteral(":/icons/result-warning.svg"));
+    case OnAccessController::State::Inactive:
+    case OnAccessController::State::Unknown:
+        break;
+    }
+    return svgIcon(QStringLiteral(":/icons/status-unknown.svg"));
+}
+
+QString onAccessTitle(OnAccessController::State state)
+{
+    switch (state) {
+    case OnAccessController::State::Active:
+        return tr("Protection en temps réel active");
+    case OnAccessController::State::Inactive:
+        return tr("Protection en temps réel désactivée");
+    case OnAccessController::State::Failed:
+        return tr("Protection en temps réel en erreur");
+    case OnAccessController::State::NotInstalled:
+        return tr("clamonacc non installé");
+    case OnAccessController::State::ServiceMissing:
+        return tr("Service de protection non installé");
+    case OnAccessController::State::Unknown:
+        break;
+    }
+    return tr("Protection en temps réel : état inconnu");
+}
+
 } // namespace StatusDisplay

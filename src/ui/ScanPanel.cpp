@@ -20,7 +20,7 @@
 #include <climits>
 
 ScanPanel::ScanPanel(ScanManager *scans, QWidget *parent)
-    : QGroupBox(tr("Scan"), parent)
+    : QWidget(parent)
     , m_scans(scans)
     , m_model(new ScanResultsModel(this))
     , m_proxy(new QSortFilterProxyModel(this))

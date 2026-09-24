@@ -2,6 +2,7 @@
 
 #include "core/ClamdWatcher.h"
 #include "core/ScanJob.h"
+#include "system/OnAccessController.h"
 
 #include <QIcon>
 #include <QString>
@@ -25,4 +26,8 @@ QString resultText(ScanResult::Status status);
 QString summaryText(const ScanSummary &summary);
 // Chemins scannés, pour l'affichage : le chemin s'il est seul, sinon « 3 éléments ».
 QString pathsText(const QStringList &paths);
+
+// Protection en temps réel.
+QIcon onAccessIcon(OnAccessController::State state);
+QString onAccessTitle(OnAccessController::State state);
 }

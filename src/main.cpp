@@ -2,6 +2,7 @@
 #include "core/ClamdWatcher.h"
 #include "core/ScanManager.h"
 #include "core/Settings.h"
+#include "system/OnAccessController.h"
 #include "system/SingleInstance.h"
 #include "system/UsbMonitor.h"
 #include "ui/MainWindow.h"
@@ -48,8 +49,9 @@ int main(int argc, char *argv[])
     ClamdWatcher watcher(&client);
     ScanManager scans(&client);
     UsbMonitor usb;
-    MainWindow window(&watcher, &scans);
-    TrayIcon tray(&watcher, &scans);
+    OnAccessController onAccess;
+    MainWindow window(&watcher, &scans, &onAccess);
+    TrayIcon tray(&watcher, &scans, &onAccess);
 
     QObject::connect(&instance, &SingleInstance::messageReceived, &window, [&window](const QByteArray &message) {
         if (message == "show")
@@ -58,6 +60,7 @@ int main(int argc, char *argv[])
     QObject::connect(&tray, &TrayIcon::showWindowRequested, &window, &MainWindow::showAndActivate);
     QObject::connect(&tray, &TrayIcon::toggleWindowRequested, &window, &MainWindow::toggleVisibility);
     QObject::connect(&tray, &TrayIcon::scanFolderRequested, &window, &MainWindow::chooseFolderToScan);
+    QObject::connect(&tray, &TrayIcon::showOnAccessRequested, &window, &MainWindow::showOnAccess);
     QObject::connect(&window, &MainWindow::windowActivated, &tray, &TrayIcon::acknowledgeThreats);
     // Résultats déjà sous les yeux de l'utilisateur : pas besoin de l'alerter via l'icône.
     QObject::connect(&scans, &ScanManager::scanFinished, &tray, [&window, &tray] {
@@ -86,5 +89,8 @@ int main(int argc, char *argv[])
         window.show();
 
     watcher.start();
+    // Protection en temps réel : état du service clamonacc, puis suivi de son journal.
+    onAccess.refresh();
+    onAccess.startMonitoring();
     return app.exec();
 }

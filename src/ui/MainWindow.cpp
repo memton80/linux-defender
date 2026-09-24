@@ -1,9 +1,11 @@
 #include "MainWindow.h"
 
+#include "OnAccessPanel.h"
 #include "ScanPanel.h"
 #include "SettingsDialog.h"
 #include "StatusDisplay.h"
 #include "core/ClamdWatcher.h"
+#include "system/OnAccessController.h"
 
 #include <QEvent>
 #include <QFormLayout>
@@ -13,12 +15,16 @@
 #include <QLocale>
 #include <QPushButton>
 #include <QStyle>
+#include <QTabWidget>
 #include <QVBoxLayout>
 
-MainWindow::MainWindow(ClamdWatcher *watcher, ScanManager *scans, QWidget *parent)
+MainWindow::MainWindow(ClamdWatcher *watcher, ScanManager *scans, OnAccessController *onAccess, QWidget *parent)
     : QMainWindow(parent)
     , m_watcher(watcher)
+    , m_onAccess(onAccess)
     , m_scanPanel(new ScanPanel(scans))
+    , m_onAccessPanel(new OnAccessPanel(onAccess))
+    , m_tabs(new QTabWidget)
 {
     // En-tête : icône d'état, titre et détails (version ou message d'erreur).
     m_icon = new QLabel;
@@ -75,10 +81,18 @@ MainWindow::MainWindow(ClamdWatcher *watcher, ScanManager *scans, QWidget *paren
     bottom->addStretch();
     bottom->addWidget(settingsButton);
 
+    m_tabs->addTab(m_scanPanel, tr("Scan"));
+    m_tabs->addTab(m_onAccessPanel, tr("Protection en temps réel"));
+    // Une menace détectée en temps réel est l'information la plus urgente :
+    // la fenêtre s'ouvrira directement sur cet onglet.
+    connect(m_onAccess, &OnAccessController::threatDetected, this, [this] {
+        m_tabs->setCurrentWidget(m_onAccessPanel);
+    });
+
     auto *central = new QWidget;
     auto *layout = new QVBoxLayout(central);
     layout->addWidget(statusBox);
-    layout->addWidget(m_scanPanel, 1);
+    layout->addWidget(m_tabs, 1);
     layout->addLayout(bottom);
     setCentralWidget(central);
 
@@ -114,10 +128,18 @@ void MainWindow::chooseFolderToScan()
     m_scanPanel->chooseFolder();
 }
 
+void MainWindow::showOnAccess()
+{
+    m_tabs->setCurrentWidget(m_onAccessPanel);
+    showAndActivate();
+}
+
 void MainWindow::showEvent(QShowEvent *event)
 {
     QMainWindow::showEvent(event);
-    m_watcher->checkNow(); // état à jour dès que la fenêtre apparaît
+    // États à jour dès que la fenêtre apparaît.
+    m_watcher->checkNow();
+    m_onAccess->refresh();
     emit windowActivated();
 }
 

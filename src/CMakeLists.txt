@@ -20,6 +20,10 @@ target_link_libraries(defender_core PUBLIC Qt6::Core Qt6::Network)
 add_library(defender_system STATIC
     system/Autostart.h
     system/Autostart.cpp
+    system/OnAccessController.h
+    system/OnAccessController.cpp
+    system/OnAccessLog.h
+    system/OnAccessLog.cpp
     system/SingleInstance.h
     system/SingleInstance.cpp
     system/UsbMonitor.h
@@ -33,6 +37,10 @@ qt_add_executable(linux-defender
     main.cpp
     ui/MainWindow.h
     ui/MainWindow.cpp
+    ui/OnAccessModel.h
+    ui/OnAccessModel.cpp
+    ui/OnAccessPanel.h
+    ui/OnAccessPanel.cpp
     ui/ScanPanel.h
     ui/ScanPanel.cpp
     ui/ScanResultsModel.h

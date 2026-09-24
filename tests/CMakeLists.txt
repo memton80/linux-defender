@@ -1,13 +1,16 @@
 find_package(Qt6 REQUIRED COMPONENTS Test)
 
-# Le test de UsbMonitor a besoin d'un bus de session D-Bus : dbus-run-session en
-# démarre un privé le temps du test. Sans lui, le test est ignoré (QSKIP).
+# Certains tests ont besoin d'un bus de session D-Bus : dbus-run-session en
+# démarre un privé le temps du test. Sans lui, ces tests sont ignorés (QSKIP).
 find_program(DBUS_RUN_SESSION dbus-run-session)
 
-foreach(test tst_clamdclient tst_clamdwatcher tst_scanjob tst_singleinstance tst_autostart tst_usbmonitor)
+# Tests qui ont besoin d'un bus de session D-Bus (faux UDisks2, faux systemd).
+set(DBUS_TESTS tst_usbmonitor tst_onaccess)
+
+foreach(test tst_clamdclient tst_clamdwatcher tst_scanjob tst_singleinstance tst_autostart tst_usbmonitor tst_onaccess)
     qt_add_executable(${test} ${test}.cpp FakeClamd.h)
     target_link_libraries(${test} PRIVATE defender_core defender_system Qt6::Test)
-    if(test STREQUAL "tst_usbmonitor" AND DBUS_RUN_SESSION)
+    if(test IN_LIST DBUS_TESTS AND DBUS_RUN_SESSION)
         add_test(NAME ${test} COMMAND ${DBUS_RUN_SESSION} -- $<TARGET_FILE:${test}>)
     else()
         add_test(NAME ${test} COMMAND ${test})

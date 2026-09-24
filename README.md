@@ -179,6 +179,86 @@ Le socket utilisé est, dans l'ordre :
 3. la directive `LocalSocket` de `/etc/clamd.d/scan.conf`, `/etc/clamav/clamd.conf` ou `/etc/clamd.conf` ;
 4. sinon, les emplacements usuels `/run/clamd.scan/clamd.sock` (Fedora) et `/run/clamav/clamd.ctl` (Debian/Ubuntu).
 
+## Protection en temps réel (clamonacc)
+
+> **En cours (étape 5).** L'application affiche déjà l'état de la protection en temps réel et les
+> menaces détectées par `clamonacc`. Le service systemd qui lance `clamonacc`, et son activation
+> depuis « Paramètres », arrivent dans un second temps.
+
+`clamonacc` est le programme de ClamAV qui surveille les fichiers en temps réel : le noyau
+(fanotify) lui signale chaque fichier ouvert ou modifié dans les dossiers surveillés, et il le
+transmet à clamd pour analyse. Linux Defender ne refait pas ce travail : il **supervise** le
+service `linux-defender-onaccess.service` qui lance `clamonacc`, et lit son journal pour vous
+prévenir de chaque détection :
+
+- notification système immédiate, avec le nom du fichier et celui de la menace ;
+- icône de la zone de notification en alerte ;
+- onglet **Protection en temps réel** de la fenêtre : état du service et liste des détections
+  (distincte des résultats des scans manuels).
+
+Les fichiers détectés ne sont **ni supprimés ni déplacés** : l'application indique seulement leur
+emplacement.
+
+### Paquet qui fournit clamonacc
+
+| Distribution | Installation | Emplacement |
+|---|---|---|
+| Fedora | `sudo dnf install clamav clamd` | `/usr/bin/clamonacc` |
+| Debian / Ubuntu | `sudo apt install clamav-daemon` | `/usr/sbin/clamonacc` |
+| Arch Linux | `sudo pacman -S clamav` | |
+| openSUSE | `sudo zypper install clamav` | |
+
+Si `clamonacc` est absent, l'onglet affiche la commande adaptée à la distribution détectée.
+
+### Privilèges nécessaires
+
+- **fanotify** exige les droits root et la capacité `CAP_SYS_ADMIN` : `clamonacc` tourne donc
+  comme service système. Sans ces droits, il échoue avec `fanotify_init failed: Operation not
+  permitted` (message expliqué dans l'onglet).
+- **`CAP_DAC_READ_SEARCH`** lui permet de suivre les dossiers privés (0700) des utilisateurs.
+- Ces deux capacités suffisent : vérifié avec clamonacc 1.5.4 privé de toutes les autres.
+- Comme pour les scans manuels, `clamonacc` transmet les fichiers ouverts à clamd (`--fdpass`) :
+  clamd n'a pas besoin de pouvoir les lire lui-même.
+- **L'application, elle, ne demande aucun privilège** pour tout cela : elle lit l'état du service
+  auprès de systemd (lecture seule) et le journal de `clamonacc`.
+
+### Journal
+
+`clamonacc` écrit ses détections dans `/var/log/linux-defender/clamonacc.log`, que l'application
+suit sans scrutation périodique (inotify). ClamAV crée ses journaux illisibles pour les
+utilisateurs (droits 0640, root) : le service doit donc créer ce fichier à l'avance, lisible
+(0644). Sinon, l'onglet le signale. Ce journal ne contient que les détections et les erreurs, mais
+il est lisible par tous les utilisateurs de la machine.
+
+`clamonacc` n'horodate pas son journal : les détections antérieures au lancement de l'application
+apparaissent avec la mention « Avant le lancement ».
+
+### Limitations connues
+
+- **Détection seulement** : l'accès aux fichiers n'est pas bloqué (`OnAccessPrevention no`), et
+  les fichiers infectés restent en place.
+- **Nombre de dossiers** : `clamonacc` suit les sous-dossiers des dossiers surveillés avec
+  inotify. Un très grand nombre de dossiers peut dépasser la limite du noyau ; l'onglet le
+  signale. Pour l'augmenter :
+
+  ```sh
+  echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/90-linux-defender.conf
+  sudo sysctl --system
+  ```
+
+- **Montages réseau et FUSE** (NFS, SMB/CIFS, sshfs...) : les modifications faites depuis une
+  autre machine sont invisibles pour fanotify, et les montages FUSE peuvent ne produire aucun
+  événement. Ces fichiers ne sont pas protégés en temps réel ; un scan manuel reste possible.
+- **Charge** : chaque fichier ouvert ou modifié dans les dossiers surveillés est analysé par
+  clamd. Les activités qui touchent beaucoup de fichiers (compilation, git, caches de
+  navigateur, machines virtuelles) consomment donc du processeur. Les fichiers de plus de 5 Mo
+  (`OnAccessMaxFileSize`) ne sont pas analysés.
+- **Service de la distribution** : Debian et Ubuntu fournissent `clamav-clamonacc.service`, qui
+  déplace les fichiers infectés dans `/root/quarantine`. Il ne doit pas tourner en même temps que
+  celui de Linux Defender ; l'onglet signale s'il est actif.
+- Sous Fedora, clamd doit pouvoir lire les fichiers transmis : voir
+  [la section SELinux](#fedora--autoriser-clamd-à-analyser-vos-fichiers-selinux).
+
 ## Compilation depuis les sources
 
 ### Dépendances
@@ -286,10 +366,14 @@ linux-defender/
 │   ├── system/               # intégration au système, sans UI
 │   │   ├── UsbMonitor.*      # montage des clés USB (UDisks2 via D-Bus)
 │   │   ├── SingleInstance.*  # une seule instance à la fois
-│   │   └── Autostart.*       # démarrage automatique (~/.config/autostart)
+│   │   ├── Autostart.*       # démarrage automatique (~/.config/autostart)
+│   │   ├── OnAccessController.* # supervision de la protection en temps réel (clamonacc)
+│   │   └── OnAccessLog.*     # suivi du journal de clamonacc (détections)
 │   └── ui/                   # interface QtWidgets
 │       ├── MainWindow.*      # fenêtre principale
-│       ├── ScanPanel.*       # section « Scan » : boutons, progression, résultats
+│       ├── ScanPanel.*       # onglet « Scan » : boutons, progression, résultats
+│       ├── OnAccessPanel.*   # onglet « Protection en temps réel » : état, détections
+│       ├── OnAccessModel.*   # liste des détections en temps réel
 │       ├── ScanResultsModel.*# liste des fichiers analysés
 │       ├── SettingsDialog.*  # dialogue « Paramètres »
 │       ├── TrayIcon.*        # icône, menu et notifications de la zone de notification
@@ -316,8 +400,9 @@ linux-defender/
 - [x] Étape 3 : scan à la demande (FILDES), scan automatique des clés USB (UDisks2), instance
       unique, démarrage automatique, paramètres
 - [x] Étape 4 : CI GitHub Actions, paquets `.deb` et `.rpm`, archive `.tar.gz`, releases
-- [ ] Plus tard : protection en temps réel (`clamonacc`), quarantaine, historique, planification,
-      scans en parallèle, KNotifications
+- [ ] Étape 5 : protection en temps réel (`clamonacc`) — supervision et détections faites ;
+      service systemd et activation depuis « Paramètres » à venir
+- [ ] Plus tard : quarantaine, historique, planification, scans en parallèle, KNotifications
 
 ## Licence
 
