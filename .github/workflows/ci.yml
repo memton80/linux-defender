@@ -75,7 +75,7 @@ jobs:
         run: |
           dnf install -y --setopt=install_weak_deps=False \
             git cmake cmake-rpm-macros ninja-build gcc-c++ qt6-qtbase-devel \
-            dbus-daemon desktop-file-utils rpm-build
+            dbus-daemon desktop-file-utils rpm-build systemd-rpm-macros
 
       - uses: actions/checkout@v4
 

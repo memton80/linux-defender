@@ -378,7 +378,7 @@ Les scripts de `packaging/` sont ceux qu'utilise la CI (à lancer à la racine d
 
 ```sh
 packaging/build-deb.sh              # Debian/Ubuntu : dpkg-dev, debhelper, + dépendances de compilation
-packaging/build-rpm.sh              # Fedora : rpm-build, cmake-rpm-macros, + dépendances de compilation
+packaging/build-rpm.sh              # Fedora : rpm-build, cmake-rpm-macros, systemd-rpm-macros, + dépendances de compilation
 packaging/build-tarball.sh build    # à partir d'un dossier de build déjà compilé
 ```
 

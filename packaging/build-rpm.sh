@@ -1,7 +1,7 @@
 #!/bin/sh
 # Construit le paquet .rpm dans dist/. À lancer à la racine du dépôt, sur
 # Fedora, avec les dépendances de construction installées :
-#   sudo dnf install rpm-build cmake gcc-c++ qt6-qtbase-devel desktop-file-utils dbus-daemon
+#   sudo dnf install rpm-build systemd-rpm-macros cmake gcc-c++ qt6-qtbase-devel desktop-file-utils dbus-daemon
 # Les tests sont relancés pendant la construction (section %check du fichier spec).
 # Les arguments éventuels sont transmis à rpmbuild.
 set -eu
