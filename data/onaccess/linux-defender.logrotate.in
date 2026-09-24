@@ -1,0 +1,13 @@
+# Rotation du journal de la protection en temps réel de Linux Defender.
+@DEFENDER_ONACCESS_LOG@ {
+    monthly
+    rotate 6
+    compress
+    missingok
+    notifempty
+    # Nouveau fichier lisible par l'application (ClamAV le créerait en 0640).
+    create 0644 root root
+    postrotate
+        systemctl kill --signal=HUP @DEFENDER_ONACCESS_SERVICE@ >/dev/null 2>&1 || true
+    endscript
+}

@@ -6,6 +6,7 @@
 #include <QDBusMessage>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -81,6 +82,7 @@ private slots:
     void unitObjectPath();
     void notInstalledWithoutBinary();
     void unreadableLogIsReported();
+    void generatedFilesMatchCode();
 
     // État lu depuis systemd (faux systemd sur un bus de session privé)
     void stateFromSystemd_data();
@@ -88,8 +90,11 @@ private slots:
     void failureExplainedByLog();
     void distributionServiceWarning();
     void refreshOnPropertiesChanged();
+    void refreshAfterDaemonReload();
+    void refreshAfterUnitFilesChanged();
 
 private:
+    void sendManagerSignal(const QString &name, const QVariantList &arguments = {});
     FakeUnit *unit(const QString &name);
     void requireFakeSystemd();
     // Contrôleur qui trouve un faux clamonacc et utilise le faux systemd.
@@ -385,6 +390,48 @@ void TestOnAccess::unreadableLogIsReported()
     QVERIFY2(controller.message().contains(QStringLiteral("n'est pas lisible")), qPrintable(controller.message()));
 }
 
+void TestOnAccess::generatedFilesMatchCode()
+{
+    // Fichiers installés par les paquets, générés par CMake à partir des mêmes
+    // valeurs que le code : ce test garantit qu'ils ne divergent jamais.
+    const QString dir = QStringLiteral(DEFENDER_ONACCESS_GENERATED_DIR);
+    const QString config = QString::fromLatin1(OnAccessController::kConfigPath);
+    const QString log = QString::fromLatin1(OnAccessController::kLogPath);
+
+    // Service : le nom du fichier est exactement celui que cherche l'application.
+    QFile unit(dir + QLatin1Char('/') + kService);
+    QVERIFY2(unit.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(unit.fileName()));
+    const QString service = QString::fromUtf8(unit.readAll());
+    QVERIFY(!service.contains(QLatin1String("@DEFENDER"))); // toutes les variables remplacées
+    QVERIFY(service.contains(QStringLiteral("--config-file=") + config));
+    QVERIFY(service.contains(QStringLiteral("--log=") + log));
+    QVERIFY(service.contains(QLatin1String("--fdpass")));
+    QVERIFY(service.contains(QStringLiteral("Conflicts=") + kDistributionService));
+    // LogsDirectory=<nom> crée /var/log/<nom> : ce doit être le dossier du journal.
+    QCOMPARE(QFileInfo(log).absolutePath(), QStringLiteral("/var/log/linux-defender"));
+    QVERIFY(service.contains(QLatin1String("LogsDirectory=linux-defender")));
+    // Installé désactivé, mais activable (section [Install]).
+    QVERIFY(service.contains(QLatin1String("WantedBy=multi-user.target")));
+
+    // Configuration de clamonacc : dossiers surveillés lus par l'application.
+    const QString configFile = dir + QStringLiteral("/clamonacc.conf");
+    QCOMPARE(OnAccessController::readWatchedPaths(configFile), QStringList{QStringLiteral("/home")});
+    QFile conf(configFile);
+    QVERIFY(conf.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString confText = QString::fromUtf8(conf.readAll());
+    QVERIFY(!confText.contains(QLatin1String("@DEFENDER")));
+    QVERIFY(confText.contains(QLatin1String("\nOnAccessPrevention no\n")));
+
+    // Rotation : même journal, même service.
+    QFile rotate(dir + QStringLiteral("/linux-defender.logrotate"));
+    QVERIFY(rotate.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString rotateText = QString::fromUtf8(rotate.readAll());
+    QVERIFY(!rotateText.contains(QLatin1String("@DEFENDER")));
+    QVERIFY(rotateText.startsWith(QLatin1String("#")) && rotateText.contains(log + QStringLiteral(" {")));
+    QVERIFY(rotateText.contains(QLatin1String("create 0644 root root")));
+    QVERIFY(rotateText.contains(kService));
+}
+
 // --- État lu depuis systemd --------------------------------------------------
 
 void TestOnAccess::stateFromSystemd_data()
@@ -467,6 +514,50 @@ void TestOnAccess::refreshOnPropertiesChanged()
                                                      QStringLiteral("PropertiesChanged"));
     signal << QStringLiteral("org.freedesktop.systemd1.Unit") << QVariantMap() << QStringList();
     QVERIFY(m_fake.send(signal));
+    QTRY_COMPARE_WITH_TIMEOUT(onAccess->state(), OnAccessController::State::Active, 3000);
+}
+
+void TestOnAccess::sendManagerSignal(const QString &name, const QVariantList &arguments)
+{
+    QDBusMessage signal = QDBusMessage::createSignal(QStringLiteral("/org/freedesktop/systemd1"),
+                                                     QStringLiteral("org.freedesktop.systemd1.Manager"), name);
+    signal.setArguments(arguments);
+    QVERIFY(m_fake.send(signal));
+}
+
+void TestOnAccess::refreshAfterDaemonReload()
+{
+    requireFakeSystemd();
+    unit(kService)->load = QStringLiteral("not-found");
+    unit(kService)->active = QStringLiteral("inactive");
+    unit(kDistributionService)->active = QStringLiteral("inactive");
+
+    auto onAccess = controller();
+    onAccess->refresh();
+    QTRY_COMPARE_WITH_TIMEOUT(onAccess->state(), OnAccessController::State::ServiceMissing, 3000);
+
+    // Le paquet installe le service puis lance systemctl daemon-reload :
+    // l'application doit le voir sans redémarrer.
+    unit(kService)->load = QStringLiteral("loaded");
+    sendManagerSignal(QStringLiteral("Reloading"), {true});
+    sendManagerSignal(QStringLiteral("Reloading"), {false});
+    QTRY_COMPARE_WITH_TIMEOUT(onAccess->state(), OnAccessController::State::Inactive, 3000);
+}
+
+void TestOnAccess::refreshAfterUnitFilesChanged()
+{
+    requireFakeSystemd();
+    unit(kService)->load = QStringLiteral("loaded");
+    unit(kService)->active = QStringLiteral("inactive");
+    unit(kDistributionService)->active = QStringLiteral("inactive");
+
+    auto onAccess = controller();
+    onAccess->refresh();
+    QTRY_COMPARE_WITH_TIMEOUT(onAccess->state(), OnAccessController::State::Inactive, 3000);
+
+    // systemctl enable --now : systemd signale le changement des fichiers d'unités.
+    unit(kService)->active = QStringLiteral("active");
+    sendManagerSignal(QStringLiteral("UnitFilesChanged"));
     QTRY_COMPARE_WITH_TIMEOUT(onAccess->state(), OnAccessController::State::Active, 3000);
 }
 

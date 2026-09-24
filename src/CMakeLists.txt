@@ -32,6 +32,18 @@ add_library(defender_system STATIC
 target_include_directories(defender_system PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(defender_system PUBLIC Qt6::Core Qt6::Network Qt6::DBus)
 
+# Protection en temps réel : nom du service systemd et chemins de ses fichiers.
+# Définis ici UNE seule fois : ils servent à générer les fichiers installés
+# (plus bas) et sont transmis au code (OnAccessController), qui les recherche.
+set(DEFENDER_ONACCESS_SERVICE "linux-defender-onaccess.service")
+set(DEFENDER_ONACCESS_CONFIG "${CMAKE_INSTALL_FULL_SYSCONFDIR}/linux-defender/clamonacc.conf")
+set(DEFENDER_ONACCESS_LOG "/var/log/linux-defender/clamonacc.log") # LogsDirectory=linux-defender
+target_compile_definitions(defender_system PUBLIC
+    DEFENDER_ONACCESS_SERVICE="${DEFENDER_ONACCESS_SERVICE}"
+    DEFENDER_ONACCESS_CONFIG="${DEFENDER_ONACCESS_CONFIG}"
+    DEFENDER_ONACCESS_LOG="${DEFENDER_ONACCESS_LOG}"
+)
+
 # Application graphique (QtWidgets).
 qt_add_executable(linux-defender
     main.cpp
@@ -70,7 +82,32 @@ qt_add_resources(linux-defender "icons"
         ${DATA_DIR}/icons/status-unknown.svg
 )
 
-install(TARGETS linux-defender RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES ${DATA_DIR}/linux-defender.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
-install(FILES ${DATA_DIR}/icons/linux-defender.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
-install(FILES ${DATA_DIR}/linux-defender.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
+# Installation, en deux composants :
+# - application : binaire, fichier .desktop, icône, page de manuel ;
+# - onaccess : service systemd de la protection en temps réel, configuration
+#   de clamonacc et rotation de son journal (fichiers système : paquets .deb
+#   et .rpm seulement, pas l'archive .tar.gz).
+install(TARGETS linux-defender RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT application)
+install(FILES ${DATA_DIR}/linux-defender.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications COMPONENT application)
+install(FILES ${DATA_DIR}/icons/linux-defender.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps COMPONENT application)
+install(FILES ${DATA_DIR}/linux-defender.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1 COMPONENT application)
+
+# Valeurs propres à chaque distribution, fixées par les paquets
+# (packaging/debian/rules, packaging/rpm/linux-defender.spec). Par défaut :
+# Debian et Ubuntu.
+set(DEFENDER_CLAMONACC "/usr/sbin/clamonacc" CACHE FILEPATH "Chemin de clamonacc")
+set(DEFENDER_CLAMD_SOCKET "/run/clamav/clamd.ctl" CACHE FILEPATH "Socket de clamd, pour clamonacc")
+set(DEFENDER_CLAMD_USER "clamav" CACHE STRING "Utilisateur de clamd, exclu de l'analyse en temps réel")
+set(DEFENDER_SYSTEMD_UNIT_DIR "lib/systemd/system" CACHE PATH "Dossier des services systemd (relatif au préfixe)")
+
+set(ONACCESS_DIR ${CMAKE_CURRENT_BINARY_DIR}/onaccess)
+configure_file(${DATA_DIR}/onaccess/linux-defender-onaccess.service.in ${ONACCESS_DIR}/${DEFENDER_ONACCESS_SERVICE} @ONLY)
+configure_file(${DATA_DIR}/onaccess/clamonacc.conf.in ${ONACCESS_DIR}/clamonacc.conf @ONLY)
+configure_file(${DATA_DIR}/onaccess/linux-defender.logrotate.in ${ONACCESS_DIR}/linux-defender.logrotate @ONLY)
+# Chemins exposés aux tests, qui vérifient la cohérence fichiers générés / code.
+set(DEFENDER_ONACCESS_GENERATED_DIR ${ONACCESS_DIR} PARENT_SCOPE)
+
+install(FILES ${ONACCESS_DIR}/${DEFENDER_ONACCESS_SERVICE} DESTINATION ${DEFENDER_SYSTEMD_UNIT_DIR} COMPONENT onaccess)
+install(FILES ${ONACCESS_DIR}/clamonacc.conf DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/linux-defender COMPONENT onaccess)
+install(FILES ${ONACCESS_DIR}/linux-defender.logrotate DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/logrotate.d
+        RENAME linux-defender COMPONENT onaccess)

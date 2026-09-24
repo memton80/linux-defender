@@ -1,0 +1,32 @@
+# Protection en temps réel de Linux Defender : lance clamonacc (ClamAV).
+# Fichier généré à partir de data/onaccess/linux-defender-onaccess.service.in.
+# Installé DÉSACTIVÉ par les paquets : il ne démarre que si on l'active.
+
+[Unit]
+Description=Linux Defender : protection en temps réel (clamonacc)
+Documentation=man:clamonacc(8) https://github.com/memton80/linux-defender
+After=clamd@scan.service clamav-daemon.service
+# Un seul clamonacc à la fois : celui de la distribution a sa propre
+# configuration (sous Debian et Ubuntu, il déplace les fichiers infectés).
+Conflicts=clamav-clamonacc.service
+
+[Service]
+Type=simple
+# Journal lisible par l'application : ClamAV le créerait en 0640 (root),
+# il est donc créé à l'avance. clamonacc garde les droits d'un fichier existant.
+LogsDirectory=linux-defender
+ExecStartPre=/usr/bin/touch @DEFENDER_ONACCESS_LOG@
+ExecStartPre=/usr/bin/chmod 0644 @DEFENDER_ONACCESS_LOG@
+ExecStart=@DEFENDER_CLAMONACC@ --foreground --fdpass --wait --config-file=@DEFENDER_ONACCESS_CONFIG@ --log=@DEFENDER_ONACCESS_LOG@
+# SIGHUP : clamonacc rouvre son journal (après une rotation).
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=30
+# root (fanotify l'exige), mais limité aux deux capacités nécessaires :
+# CAP_SYS_ADMIN pour fanotify, CAP_DAC_READ_SEARCH pour suivre les dossiers privés.
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_DAC_READ_SEARCH
+NoNewPrivileges=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

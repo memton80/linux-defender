@@ -1,0 +1,16 @@
+# Configuration de clamonacc pour Linux Defender (même format que clamd.conf).
+# Elle n'est lue que par clamonacc : la configuration de clamd n'est pas modifiée.
+# Après une modification : sudo systemctl restart @DEFENDER_ONACCESS_SERVICE@
+
+# Socket de clamd. clamonacc lui transmet les fichiers ouverts (--fdpass).
+LocalSocket @DEFENDER_CLAMD_SOCKET@
+
+# Dossiers surveillés, sous-dossiers compris (une ligne par dossier).
+OnAccessIncludePath /home
+
+# Accès ignorés : ceux de clamd lui-même et ceux de root.
+OnAccessExcludeUname @DEFENDER_CLAMD_USER@
+OnAccessExcludeRootUID yes
+
+# Détection seulement : aucun accès n'est bloqué, aucun fichier n'est modifié.
+OnAccessPrevention no

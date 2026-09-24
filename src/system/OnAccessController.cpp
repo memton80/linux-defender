@@ -42,6 +42,10 @@ OnAccessController::OnAccessController(const QDBusConnection &bus, const QString
         // arrêté, en échec)... mais seulement aux clients qui se sont abonnés.
         m_bus.connect(kSystemdService, unitObjectPath(QString::fromLatin1(kServiceName)), kPropertiesInterface,
                       QStringLiteral("PropertiesChanged"), this, SLOT(onUnitPropertiesChanged(QDBusMessage)));
+        m_bus.connect(kSystemdService, kSystemdPath, kManagerInterface, QStringLiteral("Reloading"), this,
+                      SLOT(onManagerReloading(bool)));
+        m_bus.connect(kSystemdService, kSystemdPath, kManagerInterface, QStringLiteral("UnitFilesChanged"), this,
+                      SLOT(onUnitFilesChanged()));
         m_bus.asyncCall(QDBusMessage::createMethodCall(kSystemdService, kSystemdPath, kManagerInterface,
                                                        QStringLiteral("Subscribe")));
     }
@@ -101,6 +105,17 @@ void OnAccessController::onUnitPropertiesChanged(const QDBusMessage &)
     refresh();
 }
 
+void OnAccessController::onManagerReloading(bool active)
+{
+    if (!active) // fin du rechargement
+        refresh();
+}
+
+void OnAccessController::onUnitFilesChanged()
+{
+    refresh();
+}
+
 void OnAccessController::readUnit(const QString &unitName, const std::function<void(const QVariantMap &)> &onResult)
 {
     // Lecture seule : aucun privilège nécessaire. Pour une unité inconnue,
@@ -136,7 +151,8 @@ void OnAccessController::updateState()
     } else if (loadState != QLatin1String("loaded")) {
         state = State::ServiceMissing;
         message = tr("Le service %1 n'est pas installé.\n"
-                     "Il est fourni par les paquets .deb et .rpm de Linux Defender.")
+                     "Il est installé par les paquets .deb et .rpm de Linux Defender, "
+                     "pas par l'archive .tar.gz.")
                       .arg(service);
     } else if (activeState == QLatin1String("active") || activeState == QLatin1String("reloading")) {
         state = State::Active;

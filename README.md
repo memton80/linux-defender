@@ -47,7 +47,8 @@ Désinstallation : `sudo dnf remove linux-defender` ou `sudo apt remove linux-de
 
 L'archive contient le binaire et ses fichiers d'intégration au bureau, organisés comme un
 préfixe d'installation (`bin/`, `share/`). Elle a besoin de Qt 6.4 ou plus récent (modules
-de base et plugin SVG) déjà installé sur le système.
+de base et plugin SVG) déjà installé sur le système. Elle ne contient pas le service de
+protection en temps réel, fourni seulement par les paquets.
 
 ```sh
 tar -xzf linux-defender-X.Y.Z-linux-x86_64.tar.gz
@@ -181,9 +182,10 @@ Le socket utilisé est, dans l'ordre :
 
 ## Protection en temps réel (clamonacc)
 
-> **En cours (étape 5).** L'application affiche déjà l'état de la protection en temps réel et les
-> menaces détectées par `clamonacc`. Le service systemd qui lance `clamonacc`, et son activation
-> depuis « Paramètres », arrivent dans un second temps.
+> **En cours (étape 5).** Les paquets `.deb` et `.rpm` installent le service
+> `linux-defender-onaccess.service`, **désactivé**. L'application affiche son état et les menaces
+> détectées. La case « Activer la protection en temps réel » des Paramètres arrive ensuite ; en
+> attendant, activez le service à la main (voir [Activer la protection](#activer-la-protection)).
 
 `clamonacc` est le programme de ClamAV qui surveille les fichiers en temps réel : le noyau
 (fanotify) lui signale chaque fichier ouvert ou modifié dans les dossiers surveillés, et il le
@@ -198,6 +200,40 @@ prévenir de chaque détection :
 
 Les fichiers détectés ne sont **ni supprimés ni déplacés** : l'application indique seulement leur
 emplacement.
+
+### Activer la protection
+
+Le service n'est jamais activé à l'installation du paquet. Pour l'activer (démarrage immédiat et
+à chaque démarrage de la machine), puis le désactiver :
+
+```sh
+sudo systemctl enable --now linux-defender-onaccess.service
+sudo systemctl disable --now linux-defender-onaccess.service
+```
+
+L'onglet **Protection en temps réel** se met à jour tout seul. En cas d'échec, il explique la
+cause ; le détail est aussi dans `journalctl -u linux-defender-onaccess.service`.
+
+Fichiers installés par les paquets (pas par l'archive `.tar.gz`) :
+
+| Fichier | Rôle |
+|---|---|
+| `/usr/lib/systemd/system/linux-defender-onaccess.service` | service qui lance `clamonacc` |
+| `/etc/linux-defender/clamonacc.conf` | configuration de `clamonacc` : socket de clamd, dossiers surveillés (`/home` par défaut) |
+| `/etc/logrotate.d/linux-defender` | rotation mensuelle du journal |
+
+`clamd.conf` n'est pas modifié : `clamonacc` lit sa propre configuration. Après avoir modifié
+`/etc/linux-defender/clamonacc.conf` (conservé lors des mises à jour), redémarrez le service :
+`sudo systemctl restart linux-defender-onaccess.service`.
+
+Le service tourne en root, mais limité aux deux capacités nécessaires. Si le socket de clamd
+est réservé à un groupe (`LocalSocketMode 660` dans la configuration de clamd), `clamonacc` ne
+peut pas s'y connecter : ajoutez ce groupe au service avec `sudo systemctl edit
+linux-defender-onaccess.service`, en y écrivant `[Service]` puis
+`SupplementaryGroups=<groupe du socket>`.
+
+**Non testé à ce jour : Fedora avec SELinux actif.** Si le service échoue sous Fedora, les refus
+de SELinux sont visibles avec `sudo ausearch -m avc -ts recent`.
 
 ### Paquet qui fournit clamonacc
 
@@ -381,7 +417,8 @@ linux-defender/
 ├── data/
 │   ├── icons/*.svg           # icônes SVG (placeholders à remplacer)
 │   ├── linux-defender.desktop
-│   └── linux-defender.1      # page de manuel (man linux-defender)
+│   ├── linux-defender.1      # page de manuel (man linux-defender)
+│   └── onaccess/             # service systemd, configuration de clamonacc, rotation du journal
 ├── packaging/
 │   ├── version.sh            # version à partir du tag git
 │   ├── build-deb.sh, build-rpm.sh, build-tarball.sh
@@ -400,9 +437,13 @@ linux-defender/
 - [x] Étape 3 : scan à la demande (FILDES), scan automatique des clés USB (UDisks2), instance
       unique, démarrage automatique, paramètres
 - [x] Étape 4 : CI GitHub Actions, paquets `.deb` et `.rpm`, archive `.tar.gz`, releases
-- [ ] Étape 5 : protection en temps réel (`clamonacc`) — supervision et détections faites ;
-      service systemd et activation depuis « Paramètres » à venir
+- [ ] Étape 5 : protection en temps réel (`clamonacc`) — supervision, détections et service
+      systemd (installé désactivé par les paquets) faits ; activation depuis « Paramètres » à venir
 - [ ] Plus tard : quarantaine, historique, planification, scans en parallèle, KNotifications
+
+## Historique des versions
+
+Voir [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence
 

@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+# Désinstallation : la protection en temps réel est arrêtée si elle tourne.
+if [ "$1" = "remove" ] && [ -d /run/systemd/system ]; then
+    deb-systemd-invoke stop linux-defender-onaccess.service >/dev/null || true
+fi
+
+#DEBHELPER#
+
+exit 0

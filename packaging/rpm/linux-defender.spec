@@ -23,6 +23,8 @@ BuildRequires:  qt6-qtbase-devel >= 6.4
 # Vérification du fichier .desktop et tests (bus D-Bus privé) dans %%check.
 BuildRequires:  desktop-file-utils
 BuildRequires:  dbus-daemon
+# Macros %%{_unitdir} et %%systemd_post (service de protection en temps réel).
+BuildRequires:  systemd-rpm-macros
 
 # Plugin SVG de Qt, chargé à l'exécution pour les icônes : non détecté automatiquement.
 Requires:       qt6-qtsvg%{?_isa}
@@ -55,7 +57,14 @@ avoir le droit de les lire lui-même.
 %autosetup -n %{name}-%{version}
 
 %build
-%cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DDEFENDER_VERSION=%{app_version}
+# Protection en temps réel, valeurs propres à Fedora : clamd tourne via
+# clamd@scan, sous l'utilisateur clamscan ; clamonacc est dans %%{_sbindir}
+# (/usr/bin depuis la fusion de /usr/sbin dans /usr/bin).
+%cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DDEFENDER_VERSION=%{app_version} \
+       -DDEFENDER_CLAMONACC=%{_sbindir}/clamonacc \
+       -DDEFENDER_CLAMD_SOCKET=/run/clamd.scan/clamd.sock \
+       -DDEFENDER_CLAMD_USER=clamscan \
+       -DDEFENDER_SYSTEMD_UNIT_DIR=%{_unitdir}
 %cmake_build
 
 %install
@@ -66,6 +75,13 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/%{name}.desktop
 %ctest
 
 %post
+# Service de protection en temps réel : jamais activé à l'installation (la
+# règle par défaut de Fedora désactive les services inconnus).
+%systemd_post linux-defender-onaccess.service
+# systemd relit ses fichiers pour voir le service tout de suite.
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload >/dev/null 2>&1 || :
+fi
 # Première installation seulement : rappel des réglages nécessaires côté clamd.
 if [ "$1" -eq 1 ]; then
     cat <<'EOF'
@@ -76,10 +92,20 @@ décommentez « LocalSocket /run/clamd.scan/clamd.sock » dans
 Si l'application signale « Permission refusée », ajoutez votre utilisateur au
 groupe qu'elle indique (en général « virusgroup »), puis reconnectez-vous :
     sudo usermod -aG virusgroup $USER
+Protection en temps réel (désactivée par défaut) :
+    sudo systemctl enable --now linux-defender-onaccess.service
 Détails : https://github.com/memton80/linux-defender#configurer-clamd
 
 EOF
 fi
+
+%preun
+# Désinstallation : la protection en temps réel est arrêtée et désactivée.
+%systemd_preun linux-defender-onaccess.service
+
+%postun
+# Mise à jour : si elle tournait, elle redémarre avec la nouvelle version.
+%systemd_postun_with_restart linux-defender-onaccess.service
 
 %files
 %doc README.md
@@ -87,6 +113,10 @@ fi
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 %{_mandir}/man1/%{name}.1*
+%{_unitdir}/linux-defender-onaccess.service
+%dir %{_sysconfdir}/linux-defender
+%config(noreplace) %{_sysconfdir}/linux-defender/clamonacc.conf
+%config(noreplace) %{_sysconfdir}/logrotate.d/linux-defender
 
 %changelog
 * Thu Sep 24 2026 memton80 <memton80@users.noreply.github.com> - 0.0.0~dev-1

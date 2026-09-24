@@ -16,3 +16,6 @@ foreach(test tst_clamdclient tst_clamdwatcher tst_scanjob tst_singleinstance tst
         add_test(NAME ${test} COMMAND ${test})
     endif()
 endforeach()
+
+# Dossier des fichiers de la protection en temps réel générés par CMake.
+target_compile_definitions(tst_onaccess PRIVATE DEFENDER_ONACCESS_GENERATED_DIR="${DEFENDER_ONACCESS_GENERATED_DIR}")

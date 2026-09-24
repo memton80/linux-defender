@@ -13,3 +13,8 @@ include /usr/share/dpkg/pkg-info.mk
 # « ~ » (0.0.0~dev redevient 0.0.0-dev).
 override_dh_auto_configure:
 	dh_auto_configure -- -DDEFENDER_VERSION=$(subst ~,-,$(DEB_VERSION_UPSTREAM))
+
+# Service de protection en temps réel : installé mais ni activé ni démarré.
+# L'utilisateur l'active lui-même (Paramètres, ou systemctl enable --now).
+override_dh_installsystemd:
+	dh_installsystemd --no-enable --no-start

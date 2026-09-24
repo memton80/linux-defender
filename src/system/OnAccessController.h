@@ -27,10 +27,12 @@ class OnAccessController : public QObject
     Q_OBJECT
 
 public:
-    // Service systemd qui lance clamonacc pour Linux Defender, et fichiers associés.
-    static constexpr const char *kServiceName = "linux-defender-onaccess.service";
-    static constexpr const char *kConfigPath = "/etc/linux-defender/clamonacc.conf";
-    static constexpr const char *kLogPath = "/var/log/linux-defender/clamonacc.log";
+    // Service systemd qui lance clamonacc pour Linux Defender, et fichiers
+    // associés. Valeurs définies dans src/CMakeLists.txt, qui génère aussi les
+    // fichiers installés : le code et les paquets ne peuvent pas diverger.
+    static constexpr const char *kServiceName = DEFENDER_ONACCESS_SERVICE;
+    static constexpr const char *kConfigPath = DEFENDER_ONACCESS_CONFIG;
+    static constexpr const char *kLogPath = DEFENDER_ONACCESS_LOG;
     // Service fourni par certaines distributions (Debian, Ubuntu...). Il
     // déplace les fichiers infectés : il ne doit pas tourner en même temps.
     static constexpr const char *kDistributionServiceName = "clamav-clamonacc.service";
@@ -83,6 +85,10 @@ signals:
 
 private slots:
     void onUnitPropertiesChanged(const QDBusMessage &message);
+    // systemd a relu ses fichiers (daemon-reload, par exemple après
+    // l'installation du paquet) : le service a pu apparaître ou changer.
+    void onManagerReloading(bool active);
+    void onUnitFilesChanged();
 
 private:
     void readUnit(const QString &unitName, const std::function<void(const QVariantMap &properties)> &onResult);

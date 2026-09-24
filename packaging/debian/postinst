@@ -1,17 +1,32 @@
 #!/bin/sh
 set -e
 
+SERVICE=linux-defender-onaccess.service
+
+if [ "$1" = "configure" ] && [ -d /run/systemd/system ]; then
+    # systemd relit ses fichiers pour voir le service de protection en temps
+    # réel tout de suite. Le service n'est ni activé ni démarré : c'est à
+    # l'utilisateur de le faire.
+    systemctl --system daemon-reload >/dev/null || true
+    # Mise à jour : s'il tournait déjà, il redémarre avec la nouvelle version.
+    if [ -n "$2" ]; then
+        deb-systemd-invoke try-restart "$SERVICE" >/dev/null || true
+    fi
+fi
+
 # Première installation seulement : rappel des réglages nécessaires côté clamd.
 if [ "$1" = "configure" ] && [ -z "$2" ]; then
-    cat <<'EOF'
+    cat <<'MESSAGE'
 
 Linux Defender est installé. Il a besoin du démon clamd (paquet clamav-daemon),
 dont le socket est en général /run/clamav/clamd.ctl.
 Si l'application signale « Permission refusée », ajoutez votre utilisateur au
 groupe qu'elle indique (en général « clamav »), puis reconnectez-vous :
     sudo usermod -aG clamav $USER
+Protection en temps réel (désactivée par défaut) :
+    sudo systemctl enable --now linux-defender-onaccess.service
 
-EOF
+MESSAGE
 fi
 
 #DEBHELPER#
