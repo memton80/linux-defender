@@ -11,15 +11,19 @@ add_library(defender_core STATIC
     core/ScanManager.cpp
     core/Settings.h
     core/Settings.cpp
+    core/ThreatText.h
+    core/ThreatText.cpp
 )
 target_include_directories(defender_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(defender_core PUBLIC Qt6::Core Qt6::Network)
 
 # Intégration au système : clés USB (UDisks2 via D-Bus), instance unique,
-# démarrage automatique. Pas d'UI non plus.
+# démarrage automatique, notifications du bureau. Pas d'UI non plus.
 add_library(defender_system STATIC
     system/Autostart.h
     system/Autostart.cpp
+    system/DesktopNotifier.h
+    system/DesktopNotifier.cpp
     system/OnAccessController.h
     system/OnAccessController.cpp
     system/OnAccessLog.h

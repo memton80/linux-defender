@@ -193,13 +193,34 @@ surveillés, et il le transmet à clamd pour analyse. Linux Defender ne refait p
 service `linux-defender-onaccess.service` qui lance `clamonacc`, et lit son journal pour vous
 prévenir de chaque détection :
 
-- notification système immédiate, avec le nom du fichier et celui de la menace ;
+- alerte immédiate du bureau (voir [Alertes](#alertes)) ;
 - icône de la zone de notification en alerte ;
 - onglet **Protection en temps réel** de la fenêtre : état du service et liste des détections
   (distincte des résultats des scans manuels).
 
 Les fichiers détectés ne sont **ni supprimés ni déplacés** : l'application indique seulement leur
 emplacement.
+
+### Alertes
+
+Une détection affiche une notification du bureau (Plasma, GNOME...) :
+
+- titre avec le nom du fichier (« Menace détectée : eicar.com »), nature de la menace en clair
+  (« Cheval de Troie (Windows) », « Fichier de test EICAR (inoffensif) »...) et dossier, raccourci
+  (`~/Téléchargements`). Le nom exact donné par ClamAV est dans l'onglet ;
+- alerte **critique** : elle reste affichée jusqu'à ce que vous la fermiez, même en mode « Ne pas
+  déranger », et disparaît d'elle-même quand vous ouvrez la fenêtre ;
+- boutons **Afficher les détails** (onglet **Protection en temps réel**) et **Ouvrir le dossier**
+  (gestionnaire de fichiers, fichier sélectionné). Attention : Dolphin peut générer un aperçu
+  des images, PDF ou vidéos du dossier, et donc ouvrir le fichier détecté ;
+- plusieurs détections avant que vous ne l'ayez consultée (une archive décompressée, par
+  exemple) : une seule alerte, mise à jour (« 5 menaces détectées »), plutôt qu'une par fichier ;
+- icône du thème (bouclier rouge de Breeze sous Plasma), celle de l'application sinon.
+
+Pas d'aperçu du fichier dans l'alerte : pour le générer, le bureau ouvrirait le fichier
+malveillant. Les réglages des alertes (affichage, historique, mode « Ne pas déranger ») sont ceux
+de « Linux Defender » dans Configuration du système → Notifications. Les scans de clés USB utilisent les mêmes notifications ;
+des menaces sur une clé donnent aussi une alerte critique.
 
 ### Activer la protection
 
@@ -433,11 +454,13 @@ linux-defender/
 │   │   ├── ClamdWatcher.*    # vérification périodique de l'état de clamd
 │   │   ├── ScanJob.*         # un scan (FILDES), dans son propre thread
 │   │   ├── ScanManager.*     # lance les scans, un à la fois, avec file d'attente
-│   │   └── Settings.*        # réglages (QSettings)
+│   │   ├── Settings.*        # réglages (QSettings)
+│   │   └── ThreatText.*      # textes des alertes : nom de menace lisible, chemin raccourci
 │   ├── system/               # intégration au système, sans UI
 │   │   ├── UsbMonitor.*      # montage des clés USB (UDisks2 via D-Bus)
 │   │   ├── SingleInstance.*  # une seule instance à la fois
 │   │   ├── Autostart.*       # démarrage automatique (~/.config/autostart)
+│   │   ├── DesktopNotifier.* # notifications du bureau (org.freedesktop.Notifications)
 │   │   ├── OnAccessController.* # supervision de la protection en temps réel (clamonacc)
 │   │   └── OnAccessLog.*     # suivi du journal de clamonacc (détections)
 │   └── ui/                   # interface QtWidgets
@@ -474,7 +497,7 @@ linux-defender/
 - [x] Étape 4 : CI GitHub Actions, paquets `.deb` et `.rpm`, archive `.tar.gz`, releases
 - [ ] Étape 5 : protection en temps réel (`clamonacc`) — supervision, détections et service
       systemd (installé désactivé par les paquets) faits ; activation depuis « Paramètres » à venir
-- [ ] Plus tard : quarantaine, historique, planification, scans en parallèle, KNotifications
+- [ ] Plus tard : quarantaine, historique, planification, scans en parallèle, son des alertes
 
 ## Historique des versions
 

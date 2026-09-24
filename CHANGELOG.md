@@ -45,6 +45,16 @@ portent la version `0.0.0~dev`.
 
 ### Ajouté
 
+- **Alertes plus lisibles.** Les notifications passent directement par le service de
+  notifications du bureau (`org.freedesktop.Notifications`) :
+  - titre avec le nom du fichier, nature de la menace en clair (« Cheval de Troie (Windows) »,
+    « Fichier de test EICAR (inoffensif) ») et chemin raccourci (`~/Téléchargements`) ;
+  - alerte critique, qui reste affichée jusqu'à sa fermeture, avec les boutons « Afficher les
+    détails » et « Ouvrir le dossier » ;
+  - détections rapprochées regroupées dans une seule alerte mise à jour ;
+  - icônes du thème (Breeze sous Plasma), rattachement au fichier `.desktop` de l'application.
+  Sans service de notification, l'application revient aux notifications de Qt.
+
 - Protection en temps réel (supervision de `clamonacc`) : état du service, diagnostic des
   erreurs, notifications et liste des détections.
 - Scan à la demande de fichiers et de dossiers (FILDES), scan automatique des clés USB, icône
