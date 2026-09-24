@@ -14,7 +14,8 @@ include /usr/share/dpkg/pkg-info.mk
 override_dh_auto_configure:
 	dh_auto_configure -- -DDEFENDER_VERSION=$(subst ~,-,$(DEB_VERSION_UPSTREAM))
 
-# Service de protection en temps réel : installé mais ni activé ni démarré.
-# L'utilisateur l'active lui-même (Paramètres, ou systemctl enable --now).
-override_dh_installsystemd:
-	dh_installsystemd --no-enable --no-start
+# Service de protection en temps réel : comportement par défaut de debhelper,
+# activé et démarré à la première installation, redémarré après une mise à
+# jour ; un service désactivé par l'administrateur le reste. La mise à jour
+# depuis une version antérieure à 1.0.2 (service installé désactivé) est
+# traitée dans postinst.

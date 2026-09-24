@@ -1,6 +1,7 @@
 #include "StatusDisplay.h"
 
 #include <QCoreApplication>
+#include <QFileInfo>
 #include <QLocale>
 
 namespace
@@ -33,6 +34,36 @@ QString plural(qint64 count, const char *singular, const char *pluralForm)
 
 namespace StatusDisplay
 {
+
+QColor levelColor(Level level)
+{
+    switch (level) {
+    case Level::Positive:
+        return QColor(0x27, 0xae, 0x60);
+    case Level::Warning:
+        return QColor(0xf6, 0x74, 0x00);
+    case Level::Negative:
+        return QColor(0xda, 0x44, 0x53);
+    case Level::Neutral:
+        break;
+    }
+    return {};
+}
+
+QIcon levelIcon(Level level)
+{
+    switch (level) {
+    case Level::Positive:
+        return svgIcon(QStringLiteral(":/icons/status-ok.svg"));
+    case Level::Warning:
+        return svgIcon(QStringLiteral(":/icons/result-warning.svg"));
+    case Level::Negative:
+        return svgIcon(QStringLiteral(":/icons/status-error.svg"));
+    case Level::Neutral:
+        break;
+    }
+    return svgIcon(QStringLiteral(":/icons/status-unknown.svg"));
+}
 
 QIcon icon(ClamdWatcher::State state)
 {
@@ -81,6 +112,18 @@ QString details(const ClamdWatcher &watcher)
     return {};
 }
 
+int signaturesAgeDays(const ClamdVersion &version)
+{
+    if (!version.signaturesDate.isValid())
+        return -1;
+    return int(qMax<qint64>(0, version.signaturesDate.secsTo(QDateTime::currentDateTime()) / 86400));
+}
+
+bool signaturesOutdated(const ClamdVersion &version, int maxAgeDays)
+{
+    return maxAgeDays > 0 && signaturesAgeDays(version) >= maxAgeDays;
+}
+
 QIcon scanningIcon()
 {
     return svgIcon(QStringLiteral(":/icons/status-scanning.svg"));
@@ -125,13 +168,15 @@ QString summaryText(const ScanSummary &summary)
                                     : plural(summary.infected, "%1 menace détectée", "%1 menaces détectées"));
     if (summary.errors > 0)
         parts << plural(summary.errors, "%1 erreur", "%1 erreurs");
+    if (summary.skipped > 0)
+        parts << plural(summary.skipped, "%1 fichier ignoré (taille)", "%1 fichiers ignorés (taille)");
     const QString counts = parts.join(QStringLiteral(", "));
 
     if (!summary.fatalError.isEmpty())
-        return tr("Scan interrompu (%1) :\n%2").arg(counts, summary.fatalError);
+        return tr("Analyse interrompue (%1) :\n%2").arg(counts, summary.fatalError);
     if (summary.cancelled)
-        return tr("Scan arrêté : %1.").arg(counts);
-    return tr("Scan terminé : %1.").arg(counts);
+        return tr("Analyse arrêtée : %1.").arg(counts);
+    return tr("Analyse terminée : %1.").arg(counts);
 }
 
 QString pathsText(const QStringList &paths)
@@ -139,6 +184,71 @@ QString pathsText(const QStringList &paths)
     if (paths.size() == 1)
         return paths.first();
     return plural(paths.size(), "%1 élément", "%1 éléments");
+}
+
+QString originText(ScanManager::Origin origin)
+{
+    switch (origin) {
+    case ScanManager::Origin::Quick:
+        return tr("Analyse rapide");
+    case ScanManager::Origin::Full:
+        return tr("Analyse complète");
+    case ScanManager::Origin::Usb:
+        return tr("Clé USB");
+    case ScanManager::Origin::Manual:
+        break;
+    }
+    return tr("Analyse personnalisée");
+}
+
+QString targetText(ScanManager::Origin origin, const QStringList &paths)
+{
+    // Analyse rapide : les noms des dossiers parlent plus que leurs chemins.
+    if (origin == ScanManager::Origin::Quick && paths.size() > 1 && paths.size() <= 4) {
+        QStringList names;
+        for (const QString &path : paths)
+            names << QFileInfo(path).fileName();
+        return names.join(QStringLiteral(", "));
+    }
+    return pathsText(paths);
+}
+
+Level summaryLevel(const ScanSummary &summary)
+{
+    if (summary.infected > 0)
+        return Level::Negative;
+    if (!summary.fatalError.isEmpty() || summary.errors > 0 || summary.cancelled)
+        return Level::Warning;
+    return Level::Positive;
+}
+
+QString relativeTime(const QDateTime &time)
+{
+    if (!time.isValid())
+        return {};
+    const QDateTime now = QDateTime::currentDateTime();
+    const qint64 seconds = time.secsTo(now);
+    const QString clock = QLocale().toString(time.time(), QLocale::ShortFormat);
+    if (seconds >= 0 && seconds < 60)
+        return tr("à l'instant");
+    if (seconds >= 0 && seconds < 3600)
+        return plural(seconds / 60, "il y a %1 minute", "il y a %1 minutes");
+    const qint64 days = time.date().daysTo(now.date());
+    if (days == 0)
+        return tr("aujourd'hui à %1").arg(clock);
+    if (days == 1)
+        return tr("hier à %1").arg(clock);
+    return tr("le %1 à %2").arg(QLocale().toString(time.date(), QLocale::ShortFormat), clock);
+}
+
+QString durationText(qint64 msecs)
+{
+    const qint64 seconds = msecs / 1000;
+    if (seconds < 60)
+        return tr("%1 s").arg(seconds);
+    if (seconds < 3600)
+        return tr("%1 min %2 s").arg(seconds / 60).arg(seconds % 60, 2, 10, QLatin1Char('0'));
+    return tr("%1 h %2 min").arg(seconds / 3600).arg((seconds % 3600) / 60, 2, 10, QLatin1Char('0'));
 }
 
 QIcon onAccessIcon(OnAccessController::State state)
@@ -175,6 +285,23 @@ QString onAccessTitle(OnAccessController::State state)
         break;
     }
     return tr("Protection en temps réel : état inconnu");
+}
+
+Level onAccessLevel(OnAccessController::State state)
+{
+    switch (state) {
+    case OnAccessController::State::Active:
+        return Level::Positive;
+    case OnAccessController::State::Failed:
+        return Level::Negative;
+    case OnAccessController::State::NotInstalled:
+    case OnAccessController::State::ServiceMissing:
+        return Level::Warning;
+    case OnAccessController::State::Inactive:
+    case OnAccessController::State::Unknown:
+        break;
+    }
+    return Level::Neutral;
 }
 
 } // namespace StatusDisplay

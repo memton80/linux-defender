@@ -19,13 +19,19 @@ class ScanManager : public QObject
 
 public:
     enum class Origin {
-        Manual, // lancé par l'utilisateur
+        Manual, // fichiers ou dossier choisis par l'utilisateur
         Usb,    // lancé automatiquement au branchement d'une clé USB
+        Quick,  // analyse rapide : dossiers des paramètres (Téléchargements...)
+        Full,   // analyse complète : dossier personnel
     };
     Q_ENUM(Origin)
 
     // `client` n'est pas possédé : il fournit le chemin du socket de clamd.
     explicit ScanManager(ClamdClient *client, QObject *parent = nullptr);
+
+    // Options des scans suivants (le scan en cours garde les siennes).
+    void setOptions(const ScanOptions &options);
+    ScanOptions options() const;
 
     // Lance un scan, ou le met en file d'attente si un scan est déjà en cours.
     void scan(const QStringList &paths, Origin origin);
@@ -53,6 +59,7 @@ private:
     void startNext();
 
     ClamdClient *m_client;
+    ScanOptions m_options;
     QList<Request> m_queue;
     ScanJob *m_job = nullptr;
     Origin m_origin = Origin::Manual;

@@ -5,6 +5,9 @@
 #include <QAbstractTableModel>
 #include <QFont>
 #include <QIcon>
+#include <QSortFilterProxyModel>
+
+#include <optional>
 
 /**
  * Résultats du scan en cours ou du dernier scan, pour la liste de la fenêtre.
@@ -46,4 +49,27 @@ private:
     QFont m_infectedFont;
     int m_cleanRows = 0;
     qint64 m_unlistedClean = 0;
+};
+
+/**
+ * Tri et filtre de la liste des résultats : un seul statut ou tous, et texte
+ * recherché dans le chemin ou le nom de la menace (sans tenir compte de la casse).
+ */
+class ScanResultsFilter : public QSortFilterProxyModel
+{
+    Q_OBJECT
+
+public:
+    explicit ScanResultsFilter(QObject *parent = nullptr);
+
+    // std::nullopt : tous les statuts.
+    void setStatus(std::optional<ScanResult::Status> status);
+    void setText(const QString &text);
+
+protected:
+    bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override;
+
+private:
+    std::optional<ScanResult::Status> m_status;
+    QString m_text;
 };

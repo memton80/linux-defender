@@ -5,6 +5,8 @@ add_library(defender_core STATIC
     core/ClamdClient.cpp
     core/ClamdWatcher.h
     core/ClamdWatcher.cpp
+    core/ScanHistory.h
+    core/ScanHistory.cpp
     core/ScanJob.h
     core/ScanJob.cpp
     core/ScanManager.h
@@ -51,6 +53,14 @@ target_compile_definitions(defender_system PUBLIC
 # Application graphique (QtWidgets).
 qt_add_executable(linux-defender
     main.cpp
+    ui/DashboardPage.h
+    ui/DashboardPage.cpp
+    ui/FileActions.h
+    ui/FileActions.cpp
+    ui/HistoryModel.h
+    ui/HistoryModel.cpp
+    ui/HistoryPanel.h
+    ui/HistoryPanel.cpp
     ui/MainWindow.h
     ui/MainWindow.cpp
     ui/OnAccessModel.h
@@ -67,6 +77,8 @@ qt_add_executable(linux-defender
     ui/StatusDisplay.cpp
     ui/TrayIcon.h
     ui/TrayIcon.cpp
+    ui/Widgets.h
+    ui/Widgets.cpp
 )
 target_compile_definitions(linux-defender PRIVATE DEFENDER_VERSION="${DEFENDER_VERSION}")
 target_link_libraries(linux-defender PRIVATE defender_core defender_system Qt6::Widgets)
@@ -94,7 +106,9 @@ qt_add_resources(linux-defender "icons"
 install(TARGETS linux-defender RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT application)
 install(FILES ${DATA_DIR}/linux-defender.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications COMPONENT application)
 install(FILES ${DATA_DIR}/icons/linux-defender.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps COMPONENT application)
-install(FILES ${DATA_DIR}/linux-defender.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1 COMPONENT application)
+# Page de manuel : la version y est inscrite (en-tête de « man linux-defender »).
+configure_file(${DATA_DIR}/linux-defender.1.in ${CMAKE_CURRENT_BINARY_DIR}/linux-defender.1 @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/linux-defender.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1 COMPONENT application)
 
 # Valeurs propres à chaque distribution, fixées par les paquets
 # (packaging/debian/rules, packaging/rpm/linux-defender.spec). Par défaut :

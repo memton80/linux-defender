@@ -7,16 +7,19 @@ pensée pour KDE Plasma (thème Breeze clair/sombre automatique).
 Écrite en C++ / Qt 6 (QtWidgets). Elle communique directement avec le démon `clamd`
 par son socket Unix, avec le protocole natif de clamd.
 
-Fonctions : scan à la demande de fichiers et de dossiers, scan automatique des clés USB au
-montage, icône dans la zone de notification avec l'état de clamd et des notifications,
-démarrage automatique à l'ouverture de session.
+Fonctions : tableau de bord de l'état de la protection, analyses rapide, complète ou à la demande
+de fichiers et de dossiers (avec exclusions), analyse automatique des clés USB au montage,
+historique des analyses, supervision de la protection en temps réel, icône dans la zone de
+notification avec l'état de clamd et des notifications, démarrage automatique à l'ouverture de
+session.
 
 ## Installation
 
 Les paquets de chaque version sont sur la page des releases :
 **<https://github.com/memton80/linux-defender/releases>**.
 
-Chaque release contient trois fichiers (remplacez `X.Y.Z` par la version) :
+Version actuelle : **1.0.2**. Chaque release contient trois fichiers (remplacez `X.Y.Z` par la
+version, par exemple `1.0.2`) :
 
 | Fichier | Pour |
 |---|---|
@@ -60,7 +63,7 @@ cp -r linux-defender-X.Y.Z-linux-x86_64/bin linux-defender-X.Y.Z-linux-x86_64/sh
 
 ### Versions de développement
 
-Chaque push sur `main` produit aussi les trois fichiers, en version `0.0.0-dev` : onglet
+Chaque push sur `main` produit aussi les trois fichiers, avec la version du fichier `VERSION` : onglet
 [Actions](https://github.com/memton80/linux-defender/actions/workflows/ci.yml), choisir un run, section « Artifacts »
 (connexion à GitHub nécessaire).
 
@@ -131,46 +134,97 @@ linux-defender --socket /chemin/clamd.sock
 Depuis une compilation des sources, le binaire est `build/bin/linux-defender`. Aide complète :
 `man linux-defender`.
 
-Fermer la fenêtre ne quitte pas l'application : elle reste active dans la zone de notification.
+### Fenêtre
+
+La fenêtre a une barre latérale avec quatre pages ; l'icône de chaque page reflète son état
+(bouclier vert, orange ou rouge, analyse en cours...) :
+
+- **Accueil** : un bandeau résume l'état de la protection et propose l'action la plus utile
+  (« Analyse rapide », « Voir les menaces », « Vérifier maintenant »...). En dessous, des tuiles
+  détaillent le moteur (clamd), les signatures et leur âge, la protection en temps réel, la
+  dernière analyse, les clés USB et l'historique, puis quatre boutons lancent une analyse.
+- **Analyse** : lancement et progression (fichier en cours, compteurs, durée), bilan, et liste
+  des fichiers analysés avec filtres (menaces, erreurs, sains), recherche et export CSV.
+- **Protection en temps réel** : état de `clamonacc`, dossiers surveillés et détections.
+- **Historique** : les analyses passées et, pour chacune, son bilan et ses menaces.
+
+Clic droit sur un fichier d'une liste : « Afficher dans le gestionnaire de fichiers » (Dolphin
+s'ouvre sur le dossier, fichier sélectionné), « Copier le chemin », « Copier le nom de la menace ».
+Double-clic : même chose que « Afficher dans le gestionnaire de fichiers ».
+
+Aucune feuille de style : les couleurs viennent du thème (Breeze clair ou sombre) et suivent
+ses changements.
+
+Fermer la fenêtre ne quitte pas l'application : elle reste active dans la zone de notification
+(réglable dans les paramètres).
 - Clic gauche sur l'icône : afficher ou masquer la fenêtre.
-- Clic droit : état de clamd, « Vérifier l'état de clamd », « Scanner un dossier… »,
-  « Arrêter le scan » (pendant un scan), « Ouvrir la fenêtre », « Quitter ».
+- Clic droit : état de clamd, « Vérifier l'état de clamd », « Analyse rapide »,
+  « Analyser un dossier… », « Arrêter l'analyse » (pendant une analyse), « Ouvrir la fenêtre »,
+  « Quitter ».
 
 L'application ne se lance qu'une fois : la relancer réaffiche simplement la fenêtre existante.
 
-### Scan
+### Analyses
 
-Boutons « Scanner des fichiers… » et « Scanner un dossier… » de la fenêtre. Le dossier est
-parcouru récursivement ; les liens symboliques ne sont pas suivis, et `/proc`, `/sys` et `/dev`
-sont ignorés. Chaque fichier est ouvert par l'application avec vos droits, puis transmis à clamd
-(comme `clamdscan --fdpass`) : clamd peut donc analyser votre dossier personnel et vos clés USB
-sans avoir le droit de les lire lui-même.
+- **Analyse rapide** : les dossiers où arrivent les nouveaux fichiers, par défaut Téléchargements,
+  Bureau et Documents (modifiables dans les paramètres) ;
+- **Analyse complète** : tout le dossier personnel ;
+- **Dossier…** et **Fichiers…** : ce que vous choisissez.
+
+Les dossiers sont parcourus récursivement ; les liens symboliques ne sont pas suivis, et `/proc`,
+`/sys` et `/dev` sont ignorés, ainsi que les exclusions des paramètres. Chaque fichier est ouvert
+par l'application avec vos droits, puis transmis à clamd (comme `clamdscan --fdpass`) : clamd peut
+donc analyser votre dossier personnel et vos clés USB sans avoir le droit de les lire lui-même.
 
 La liste affiche les menaces en premier (avec le nom donné par clamd), puis les erreurs, puis
 les fichiers sains. Pour limiter la mémoire utilisée, seuls les 10 000 premiers fichiers sains
-sont listés ; le résumé compte tous les fichiers.
+sont listés ; les compteurs incluent tous les fichiers.
+
+Chaque analyse terminée est enregistrée dans l'historique
+(`~/.local/share/linux-defender/history.json`, 100 analyses par défaut) avec ses 100 premières
+menaces.
 
 ### Clés USB
 
-Quand une clé USB ou une carte mémoire est **montée**, elle est scannée automatiquement, avec une
-notification au début et à la fin du scan. Sous Plasma, une clé est montée quand vous l'ouvrez
-(Dolphin, notification « Périphériques ») ou dès le branchement si le montage automatique est
-activé (Configuration du système → Disques et caméras → Montage automatique des périphériques).
+Quand une clé USB ou une carte mémoire est **montée**, elle est analysée automatiquement, avec une
+notification au début et à la fin de l'analyse. Sous Plasma, une clé est montée quand vous
+l'ouvrez (Dolphin, notification « Périphériques ») ou dès le branchement si le montage
+automatique est activé (Configuration du système → Disques et caméras → Montage automatique des
+périphériques).
 
-Tant qu'un scan lit la clé, elle ne peut pas être éjectée : arrêtez le scan depuis le menu de
-l'icône (« Arrêter le scan ») si besoin.
+Tant qu'une analyse lit la clé, elle ne peut pas être éjectée : arrêtez l'analyse depuis la
+fenêtre ou le menu de l'icône (« Arrêter l'analyse ») si besoin.
 
 ### Paramètres
 
-Bouton « Paramètres… » de la fenêtre :
-- **Socket de clamd** : à renseigner seulement si la détection automatique échoue ;
-- **Scanner automatiquement les clés USB** : activé par défaut ;
-- **Lancer au démarrage de la session** : crée `~/.config/autostart/linux-defender.desktop`, qui
-  lance l'application avec `--background`.
+Bouton « Paramètres » de la barre latérale. « Appliquer » enregistre sans fermer ; « Valeurs par
+défaut » remplit toutes les pages avec les valeurs d'origine (sans toucher au démarrage
+automatique).
+
+| Page | Réglage | Par défaut |
+|---|---|---|
+| Général | Lancer à l'ouverture de la session (`~/.config/autostart/linux-defender.desktop`, avec `--background`) | non |
+| | Garder l'application dans la zone de notification quand la fenêtre est fermée (sinon, fermer quitte) | oui |
+| | Nombre d'analyses conservées dans l'historique (0 : historique désactivé) | 100 |
+| Analyse | Dossiers de l'analyse rapide | Téléchargements, Bureau, Documents |
+| | Exclusions : dossiers et fichiers ignorés quand ils sont dans un dossier analysé | aucune |
+| | Analyser les fichiers et dossiers cachés | oui |
+| | Ignorer les fichiers de plus de N Mo (comptés à part dans le bilan) | non |
+| Clés USB | Analyser automatiquement au montage | oui |
+| | Notifier le début et la fin de l'analyse d'une clé | oui |
+| Notifications | Fin d'une analyse sans menace (fenêtre pas au premier plan) | oui |
+| | Menace détectée en temps réel ; clamd ne répond plus ; signatures obsolètes | oui |
+| clamd | Socket, avec bouton « Tester » (vide : détection automatique) | automatique |
+| | Intervalle de vérification de l'état de clamd | 30 s |
+| | Âge au-delà duquel les signatures sont signalées comme obsolètes (0 : jamais) | 3 jours |
+
+Les menaces trouvées par une analyse sont toujours notifiées. Les exclusions, la limite de
+taille et les fichiers cachés portent sur le contenu des dossiers parcourus : un dossier ou un
+fichier choisi explicitement est toujours analysé.
 
 Les réglages sont enregistrés dans `~/.config/linux-defender/linux-defender.conf`.
 
-L'état de clamd est vérifié toutes les 30 secondes, à l'ouverture de la fenêtre et sur demande.
+L'état de clamd est vérifié à intervalle régulier, à l'ouverture de la fenêtre et sur demande.
 La vérification utilise la commande `VERSION` de clamd, qui donne aussi la version du moteur
 et la date des signatures.
 
@@ -182,10 +236,11 @@ Le socket utilisé est, dans l'ordre :
 
 ## Protection en temps réel (clamonacc)
 
-> Les paquets `.deb` et `.rpm` installent le service `linux-defender-onaccess.service`,
-> **désactivé**. Activez-le à la main (voir [Activer la protection](#activer-la-protection)) ; une
-> case « Activer la protection en temps réel » dans les Paramètres arrivera dans une prochaine
-> version.
+> Depuis la version 1.0.2, les paquets `.deb` et `.rpm` installent le service
+> `linux-defender-onaccess.service` **activé et démarré** : la protection en temps réel
+> fonctionne dès l'installation (voir [Activer ou désactiver la
+> protection](#activer-ou-désactiver-la-protection)). Une case dans les Paramètres arrivera dans
+> une prochaine version.
 
 `clamonacc` est le programme de ClamAV qui surveille les fichiers en temps réel : le noyau
 (fanotify et inotify) lui signale chaque fichier ouvert, créé, écrit ou renommé dans les dossiers
@@ -195,7 +250,7 @@ prévenir de chaque détection :
 
 - alerte immédiate du bureau (voir [Alertes](#alertes)) ;
 - icône de la zone de notification en alerte ;
-- onglet **Protection en temps réel** de la fenêtre : état du service et liste des détections
+- page **Protection en temps réel** de la fenêtre : état du service et liste des détections
   (distincte des résultats des scans manuels).
 
 Les fichiers détectés ne sont **ni supprimés ni déplacés** : l'application indique seulement leur
@@ -207,10 +262,10 @@ Une détection affiche une notification du bureau (Plasma, GNOME...) :
 
 - titre avec le nom du fichier (« Menace détectée : eicar.com »), nature de la menace en clair
   (« Cheval de Troie (Windows) », « Fichier de test EICAR (inoffensif) »...) et dossier, raccourci
-  (`~/Téléchargements`). Le nom exact donné par ClamAV est dans l'onglet ;
+  (`~/Téléchargements`). Le nom exact donné par ClamAV est dans la fenêtre ;
 - alerte **critique** : elle reste affichée jusqu'à ce que vous la fermiez, même en mode « Ne pas
   déranger », et disparaît d'elle-même quand vous ouvrez la fenêtre ;
-- boutons **Afficher les détails** (onglet **Protection en temps réel**) et **Ouvrir le dossier**
+- boutons **Afficher les détails** (page **Protection en temps réel**) et **Ouvrir le dossier**
   (gestionnaire de fichiers, fichier sélectionné). Attention : Dolphin peut générer un aperçu
   des images, PDF ou vidéos du dossier, et donc ouvrir le fichier détecté ;
 - plusieurs détections avant que vous ne l'ayez consultée (une archive décompressée, par
@@ -222,21 +277,36 @@ malveillant. Les réglages des alertes (affichage, historique, mode « Ne pas d�
 de « Linux Defender » dans Configuration du système → Notifications. Les scans de clés USB utilisent les mêmes notifications ;
 des menaces sur une clé donnent aussi une alerte critique.
 
-### Activer la protection
+### Activer ou désactiver la protection
 
-Le service n'est jamais activé à l'installation du paquet. Pour l'activer (démarrage immédiat et
-à chaque démarrage de la machine), puis le désactiver :
+Les paquets activent le service (démarrage à chaque démarrage de la machine) et le démarrent :
+
+- à la première installation ;
+- lors d'une mise à jour depuis une version antérieure à 1.0.2, où il était installé désactivé.
+
+Ensuite, votre choix est respecté : un service désactivé le reste lors des mises à jour. Pour le
+désactiver, puis le réactiver :
 
 ```sh
-sudo systemctl enable --now linux-defender-onaccess.service
 sudo systemctl disable --now linux-defender-onaccess.service
+sudo systemctl enable --now linux-defender-onaccess.service
 ```
 
-L'onglet **Protection en temps réel** se met à jour tout seul. En cas d'échec, il explique la
+Sous Fedora, l'activation passe par une règle de préréglage installée par le paquet
+(`/usr/lib/systemd/system-preset/80-linux-defender.preset`), qui l'emporte sur la règle par
+défaut de Fedora (« désactiver les services inconnus »).
+
+`clamonacc` n'est que recommandé par les paquets. S'il est absent, le service est simplement
+ignoré (`ConditionPathExists`), sans échec répété, et la page indique comment l'installer ; une
+fois `clamonacc` installé, démarrez le service avec la commande ci-dessus (ou redémarrez la
+machine). `clamonacc` est lancé avec `--wait` : si clamd n'est pas encore prêt (signatures en
+cours de téléchargement, socket pas encore configuré sous Fedora), il l'attend.
+
+La page **Protection en temps réel** se met à jour toute seule. En cas d'échec, elle explique la
 cause ; le détail est aussi dans `journalctl -u linux-defender-onaccess.service`.
 
 Si `clamonacc` s'arrête sans que vous l'ayez demandé, systemd le relance 30 secondes plus tard
-(`Restart=always`) et l'onglet affiche « Protection en temps réel en erreur », avec la cause lue
+(`Restart=always`) et la page affiche « Protection en temps réel en erreur », avec la cause lue
 dans le journal. `clamonacc` quitte en effet avec le code 0 même sur une erreur fatale (limite
 inotify atteinte, plantage), exactement comme lors d'un arrêt demandé : seul systemd sait
 distinguer les deux. Un arrêt demandé (`systemctl stop` ou `disable --now`) n'est jamais relancé.
@@ -245,7 +315,8 @@ Fichiers installés par les paquets (pas par l'archive `.tar.gz`) :
 
 | Fichier | Rôle |
 |---|---|
-| `/usr/lib/systemd/system/linux-defender-onaccess.service` | service qui lance `clamonacc` |
+| `/usr/lib/systemd/system/linux-defender-onaccess.service` | service qui lance `clamonacc` (activé à l'installation) |
+| `/usr/lib/systemd/system-preset/80-linux-defender.preset` | Fedora : active le service à l'installation |
 | `/etc/linux-defender/clamonacc.conf` | configuration de `clamonacc` : socket de clamd, dossiers surveillés (`/home` par défaut), analyse à l'écriture |
 | `/etc/logrotate.d/linux-defender` | rotation mensuelle du journal |
 
@@ -271,13 +342,13 @@ de SELinux sont visibles avec `sudo ausearch -m avc -ts recent`.
 | Arch Linux | `sudo pacman -S clamav` | |
 | openSUSE | `sudo zypper install clamav` | |
 
-Si `clamonacc` est absent, l'onglet affiche la commande adaptée à la distribution détectée.
+Si `clamonacc` est absent, la page affiche la commande adaptée à la distribution détectée.
 
 ### Privilèges nécessaires
 
 - **fanotify** exige les droits root et la capacité `CAP_SYS_ADMIN` : `clamonacc` tourne donc
   comme service système. Sans ces droits, il échoue avec `fanotify_init failed: Operation not
-  permitted` (message expliqué dans l'onglet).
+  permitted` (message expliqué dans la page).
 - **`CAP_DAC_READ_SEARCH`** lui permet de suivre les dossiers privés (0700) des utilisateurs.
 - Ces deux capacités suffisent : vérifié avec clamonacc 1.5.4 privé de toutes les autres.
 - Comme pour les scans manuels, `clamonacc` transmet les fichiers ouverts à clamd (`--fdpass`) :
@@ -290,7 +361,7 @@ Si `clamonacc` est absent, l'onglet affiche la commande adaptée à la distribut
 `clamonacc` écrit ses détections dans `/var/log/linux-defender/clamonacc.log`, que l'application
 suit sans scrutation périodique (inotify). ClamAV crée ses journaux illisibles pour les
 utilisateurs (droits 0640, root) : le service doit donc créer ce fichier à l'avance, lisible
-(0644). Sinon, l'onglet le signale. Ce journal ne contient que les détections et les erreurs, mais
+(0644). Sinon, la page le signale. Ce journal ne contient que les détections et les erreurs, mais
 il est lisible par tous les utilisateurs de la machine.
 
 `clamonacc` n'horodate pas son journal : les détections antérieures au lancement de l'application
@@ -307,7 +378,7 @@ pendant la copie peuvent manquer à l'archive.
   les fichiers infectés restent en place.
 - **Nombre de dossiers** : `clamonacc` pose une surveillance inotify sur chaque dossier sous les
   dossiers surveillés. Si leur nombre dépasse la limite du noyau au démarrage, `clamonacc` écrit
-  `could not watch path '/home', No space left on device` et s'arrête ; l'onglet le signale et
+  `could not watch path '/home', No space left on device` et s'arrête ; la page le signale et
   systemd le relance toutes les 30 secondes. Pour comparer la limite au nombre de dossiers, puis
   l'augmenter :
 
@@ -352,7 +423,7 @@ pendant la copie peuvent manquer à l'archive.
   (`OnAccessMaxFileSize`) ne sont pas analysés.
 - **Service de la distribution** : Debian et Ubuntu fournissent `clamav-clamonacc.service`, qui
   déplace les fichiers infectés dans `/root/quarantine`. Il ne doit pas tourner en même temps que
-  celui de Linux Defender ; l'onglet signale s'il est actif.
+  celui de Linux Defender ; la page signale s'il est actif.
 - Sous Fedora, clamd doit pouvoir lire les fichiers transmis : voir
   [la section SELinux](#fedora--autoriser-clamd-à-analyser-vos-fichiers-selinux).
 
@@ -422,16 +493,18 @@ produit. Ils sont aussi relancés pendant la construction de chaque paquet.
 
 ### Publier une version
 
+La version est écrite à un seul endroit : le fichier `VERSION` à la racine (`1.0.2`). CMake,
+les paquets, la page de manuel et la fenêtre « À propos » la lisent tous là. Pour publier :
+
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+echo 1.0.3 > VERSION        # puis journal des modifications, commit, fusion dans main
+git tag v1.0.3
+git push origin v1.0.3
 ```
 
-Le workflow crée alors la release GitHub avec les trois fichiers. Un tag avec suffixe
-(`v0.1.0-rc1`) crée une préversion.
-
-La version vient du tag : `v1.2.3` donne `1.2.3`. Hors tag, c'est `0.0.0-dev`, notée
-`0.0.0~dev` dans les paquets (le `~` classe cette version avant toute version publiée).
+Le workflow crée alors la release GitHub avec les trois fichiers. Le tag doit correspondre au
+fichier `VERSION` (sinon la CI s'arrête). Un tag avec suffixe (`v1.0.3-rc1`) crée une
+préversion, notée `1.0.3~rc1` dans les paquets (le `~` la classe avant la version finale).
 
 ### Construire les paquets en local
 
@@ -450,6 +523,7 @@ Les fichiers produits sont dans `dist/`. Les recettes des paquets sont dans `pac
 
 ```
 linux-defender/
+├── VERSION                   # numéro de version (seul endroit où le changer)
 ├── CMakeLists.txt            # projet, options, dépendances Qt
 ├── src/
 │   ├── CMakeLists.txt        # cibles : defender_core, defender_system (bibliothèques) + linux-defender
@@ -457,9 +531,10 @@ linux-defender/
 │   ├── core/                 # logique métier : QtCore + QtNetwork, aucune dépendance à l'UI
 │   │   ├── ClamdClient.*     # communication avec clamd (socket Unix, protocole natif)
 │   │   ├── ClamdWatcher.*    # vérification périodique de l'état de clamd
-│   │   ├── ScanJob.*         # un scan (FILDES), dans son propre thread
+│   │   ├── ScanHistory.*     # historique des analyses (JSON)
+│   │   ├── ScanJob.*         # un scan (FILDES), dans son propre thread, avec ses options
 │   │   ├── ScanManager.*     # lance les scans, un à la fois, avec file d'attente
-│   │   ├── Settings.*        # réglages (QSettings)
+│   │   ├── Settings.*        # réglages (QSettings) et leurs valeurs par défaut
 │   │   └── ThreatText.*      # textes des alertes : nom de menace lisible, chemin raccourci
 │   ├── system/               # intégration au système, sans UI
 │   │   ├── UsbMonitor.*      # montage des clés USB (UDisks2 via D-Bus)
@@ -469,21 +544,26 @@ linux-defender/
 │   │   ├── OnAccessController.* # supervision de la protection en temps réel (clamonacc)
 │   │   └── OnAccessLog.*     # suivi du journal de clamonacc (détections)
 │   └── ui/                   # interface QtWidgets
-│       ├── MainWindow.*      # fenêtre principale
-│       ├── ScanPanel.*       # onglet « Scan » : boutons, progression, résultats
-│       ├── OnAccessPanel.*   # onglet « Protection en temps réel » : état, détections
+│       ├── MainWindow.*      # fenêtre principale : barre latérale et pages
+│       ├── DashboardPage.*   # page « Accueil » : bandeau d'état, tuiles, lancement des analyses
+│       ├── ScanPanel.*       # page « Analyse » : progression, bilan, résultats filtrés
+│       ├── OnAccessPanel.*   # page « Protection en temps réel » : état, détections
+│       ├── HistoryPanel.*    # page « Historique » : analyses passées et leurs menaces
+│       ├── HistoryModel.*    # liste des analyses de l'historique
 │       ├── OnAccessModel.*   # liste des détections en temps réel
-│       ├── ScanResultsModel.*# liste des fichiers analysés
-│       ├── SettingsDialog.*  # dialogue « Paramètres »
+│       ├── ScanResultsModel.*# liste des fichiers analysés, et son filtre
+│       ├── SettingsDialog.*  # dialogue « Paramètres », en pages
 │       ├── TrayIcon.*        # icône, menu et notifications de la zone de notification
-│       └── StatusDisplay.*   # icônes et textes partagés
+│       ├── Widgets.*         # cadres teintés, liste vide, liste de chemins modifiable
+│       ├── FileActions.*     # afficher un fichier dans Dolphin, copier son chemin
+│       └── StatusDisplay.*   # icônes, couleurs et textes partagés
 ├── data/
 │   ├── icons/*.svg           # icônes SVG (placeholders à remplacer)
 │   ├── linux-defender.desktop
-│   ├── linux-defender.1      # page de manuel (man linux-defender)
+│   ├── linux-defender.1.in   # page de manuel (man linux-defender), version ajoutée par CMake
 │   └── onaccess/             # service systemd, configuration de clamonacc, rotation du journal
 ├── packaging/
-│   ├── version.sh            # version à partir du tag git
+│   ├── version.sh            # version : fichier VERSION (vérifiée contre le tag git)
 │   ├── build-deb.sh, build-rpm.sh, build-tarball.sh
 │   ├── debian/               # paquet .deb (debhelper)
 │   └── rpm/                  # paquet .rpm (fichier spec)
@@ -501,9 +581,11 @@ linux-defender/
       unique, démarrage automatique, paramètres
 - [x] Étape 4 : CI GitHub Actions, paquets `.deb` et `.rpm`, archive `.tar.gz`, releases
 - [ ] Étape 5 : protection en temps réel (`clamonacc`) — supervision, détections, alertes et
-      service systemd (installé désactivé par les paquets) faits dans la **version 1.0.0** ;
-      activation depuis « Paramètres » à venir
-- [ ] Plus tard : quarantaine, historique, planification, scans en parallèle, son des alertes
+      service systemd faits dans la **version 1.0.0**, service activé à l'installation depuis la
+      **version 1.0.2** ; case dans les « Paramètres » à venir
+- [x] Interface : tableau de bord, historique des analyses, analyse rapide et complète,
+      exclusions, paramètres en pages
+- [ ] Plus tard : quarantaine, planification, scans en parallèle, son des alertes
 
 ## Historique des versions
 

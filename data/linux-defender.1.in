@@ -1,5 +1,6 @@
 .\" -*- coding: UTF-8 -*-
-.TH LINUX-DEFENDER 1 "2026" "linux-defender" "Commandes utilisateur"
+.\" Fichier généré à partir de data/linux-defender.1.in (version : fichier VERSION).
+.TH LINUX-DEFENDER 1 "2026" "linux-defender @DEFENDER_VERSION@" "Commandes utilisateur"
 .SH NOM
 linux-defender \- interface graphique légère pour l'antivirus ClamAV
 .SH SYNOPSIS
@@ -11,9 +12,11 @@ linux-defender \- interface graphique légère pour l'antivirus ClamAV
 .B linux-defender
 est une interface Qt pour le démon
 .BR clamd (8)
-de ClamAV. Elle affiche l'état de clamd dans la zone de notification, scanne
-à la demande des fichiers et des dossiers, et scanne automatiquement les clés
-USB et cartes mémoire au moment de leur montage.
+de ClamAV. Elle affiche l'état de la protection (tableau de bord et zone de
+notification), analyse à la demande des fichiers et des dossiers (analyse
+rapide, complète ou personnalisée, avec exclusions), analyse automatiquement
+les clés USB et cartes mémoire au moment de leur montage, et garde un
+historique des analyses.
 .PP
 Pour scanner, l'application ouvre elle-même chaque fichier et le transmet à
 clamd (commande FILDES) : clamd peut ainsi analyser le dossier personnel et les
@@ -40,6 +43,9 @@ Affiche la version.
 .TP
 .I ~/.config/linux-defender/linux-defender.conf
 Paramètres de l'application.
+.TP
+.I ~/.local/share/linux-defender/history.json
+Historique des analyses.
 .TP
 .I ~/.config/autostart/linux-defender.desktop
 Présent quand le démarrage automatique est activé.

@@ -1,6 +1,8 @@
-linux-defender (0.0.0~dev) unstable; urgency=medium
+linux-defender (1.0.2) unstable; urgency=medium
 
-  * Paquet construit à partir des sources du dépôt. La version est
-    remplacée par packaging/build-deb.sh.
+  * Nouvelle interface : tableau de bord, historique, paramètres en pages.
+  * Protection en temps réel activée et démarrée à l'installation.
+  * Détails : CHANGELOG.md. La version de la première ligne est remplacée
+    par packaging/build-deb.sh (fichier VERSION).
 
- -- memton80 <memton80@users.noreply.github.com>  Thu, 24 Sep 2026 09:00:00 +0000
+ -- memton80 <memton80@users.noreply.github.com>  Thu, 24 Sep 2026 15:00:00 +0000

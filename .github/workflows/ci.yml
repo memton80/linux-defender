@@ -54,6 +54,15 @@ jobs:
       - name: Paquet .deb
         run: packaging/build-deb.sh
 
+      - name: Installation du .deb (service temps réel activé)
+        # Le runner fait tourner systemd : le paquet active et démarre le
+        # service. Sans clamonacc (non installé ici), le service est ignoré
+        # (ConditionPathExists) au lieu d'échouer.
+        run: |
+          sudo apt-get install -y ./dist/*.deb
+          test "$(systemctl is-enabled linux-defender-onaccess.service)" = enabled
+          systemctl status linux-defender-onaccess.service --no-pager || true
+
       - name: Archive .tar.gz
         run: packaging/build-tarball.sh build
 
@@ -92,6 +101,14 @@ jobs:
 
       - name: Paquet .rpm
         run: packaging/build-rpm.sh
+
+      - name: Installation du .rpm (service temps réel activé)
+        # systemd d'abord, pour que %post applique le préréglage
+        # 80-linux-defender.preset (systemctl fonctionne sans systemd démarré).
+        run: |
+          dnf install -y --setopt=install_weak_deps=False systemd
+          dnf install -y --setopt=install_weak_deps=False ./dist/linux-defender-[0-9]*.rpm
+          test "$(systemctl is-enabled linux-defender-onaccess.service)" = enabled
 
       - uses: actions/upload-artifact@v4
         with:

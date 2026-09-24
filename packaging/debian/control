@@ -23,8 +23,11 @@ Description: lightweight Qt interface for the ClamAV antivirus
  (clamd), designed for KDE Plasma and its Breeze theme.
  .
  Features:
-  - on-demand scan of files and folders, with progress and a list of results;
+  - dashboard showing the protection status;
+  - quick, full and custom scans, with progress, filters and exclusions;
   - automatic scan of USB keys and memory cards when they are mounted;
+  - scan history;
+  - real-time protection (clamonacc), enabled at installation;
   - system tray icon showing the clamd status, with desktop notifications.
  .
  Files are opened by the application and passed to clamd (FILDES), so clamd
