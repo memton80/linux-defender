@@ -14,3 +14,9 @@ OnAccessExcludeRootUID yes
 
 # Détection seulement : aucun accès n'est bloqué, aucun fichier n'est modifié.
 OnAccessPrevention no
+
+# Analyse aussi les fichiers créés, écrits ou déplacés (inotify). Sans cette
+# option, un fichier n'est analysé qu'à son ouverture : un téléchargement,
+# ouvert vide puis rempli (ou écrit en .part puis renommé), n'est détecté
+# que lorsque quelqu'un le rouvre.
+OnAccessExtraScanning yes

@@ -23,12 +23,13 @@ struct OnAccessDetection
 // Une ligne utile du journal de clamonacc.
 struct OnAccessLogLine
 {
-    enum class Type { Detection, Error };
+    enum class Type { Detection, Error, RunStart };
 
     Type type = Type::Error;
-    QString path;    // Detection
-    QString threat;  // Detection
-    QString message; // Error : texte après « ERROR: »
+    QString path;        // Detection
+    QString threat;      // Detection
+    QString message;     // Error : texte de l'erreur, sans « ERROR: »
+    bool benign = false; // Error : sans conséquence pour la protection
 };
 
 /**
@@ -40,11 +41,18 @@ struct OnAccessLogLine
  * exister encore (service jamais lancé), être vidé ou remplacé (rotation) :
  * dans tous les cas la lecture reprend au bon endroit.
  *
- * Lignes reconnues (relevées sur clamonacc 1.5, avec --fdpass) :
+ * Lignes reconnues (relevées sur clamonacc 1.5.4, avec --fdpass) :
+ *   --------------------------------------      (début d'un lancement)
  *   /home/u/facture.pdf.exe: Win.Test.EICAR_HDB-1 FOUND
- *   ERROR: Clamonacc: fanotify_init failed: Operation not permitted
+ *   ERROR: ClamInotif: could not watch path '/home', No space left on device
+ *   Wait timeout exceeded; Could not connect to clamd   (erreur sans « ERROR: »)
  * clamonacc écrit souvent deux fois la même détection (écriture puis lecture
  * du fichier) : les doublons rapprochés sont ignorés.
+ *
+ * Certaines erreurs sont sans conséquence (OnAccessLogLine::benign) : un
+ * dossier supprimé avant que clamonacc ait pu le surveiller, comme ceux que
+ * les navigateurs créent et suppriment aussitôt dans leurs caches. Elles ne
+ * sont pas signalées.
  */
 class OnAccessLog : public QObject
 {
@@ -55,7 +63,8 @@ public:
 
     QString path() const;
 
-    // Lit les détections déjà présentes (historyLoaded), puis suit les ajouts.
+    // Lit les détections déjà présentes (historyLoaded) et la dernière erreur
+    // du dernier lancement (errorLogged), puis suit les ajouts.
     void start();
 
     static std::optional<OnAccessLogLine> parseLine(const QString &line);
@@ -65,7 +74,10 @@ signals:
     void historyLoaded(const QList<OnAccessDetection> &detections);
     // Nouvelle détection, au moment où clamonacc l'écrit.
     void threatDetected(const OnAccessDetection &detection);
-    // Nouvelle erreur écrite par clamonacc (clamd injoignable, privilèges...).
+    // clamonacc vient de démarrer : les erreurs écrites avant ne le concernent plus.
+    void runStarted();
+    // Erreur du lancement en cours (clamd injoignable, privilèges...). Au
+    // démarrage de la lecture : la dernière erreur déjà présente, s'il y en a.
     void errorLogged(const QString &message);
 
 private:

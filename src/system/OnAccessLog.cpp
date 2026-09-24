@@ -6,12 +6,39 @@
 
 #include <sys/stat.h>
 
+#include <algorithm>
+#include <iterator>
+
 namespace
 {
 constexpr qint64 kMaxHistoryBytes = 256 * 1024; // lecture de l'historique au démarrage
 constexpr int kMaxHistoryEntries = 500;
 constexpr int kDuplicateWindowSecs = 10;
 constexpr int kTailSize = 64;
+
+// Messages relevés sur clamonacc 1.5.4.
+// Erreurs écrites sans « ERROR: » en tête.
+const QLatin1String kUnprefixedErrors[] = {
+    QLatin1String("Wait timeout exceeded;"), // --wait : clamd toujours injoignable après 30 s
+};
+// Erreurs sans conséquence : un dossier apparu puis supprimé avant que
+// clamonacc ait pu le surveiller (par exemple safebrowsing-backup, que Firefox
+// et ses dérivés créent et suppriment à chaque mise à jour de leurs listes).
+// Les mêmes lignes précèdent l'erreur fatale « could not watch path », qui,
+// elle, est signalée.
+const QLatin1String kBenignErrors[] = {
+    QLatin1String("ClamInotif: could not add element to hash table for "),
+    QLatin1String("ClamInotif: watch descriptor issue when adding watch for "),
+    QLatin1String("ClamInotif: issue when adding watch for "),
+};
+
+// text commence-t-il par l'un des préfixes ?
+template<size_t N>
+bool startsWithAny(const QString &text, const QLatin1String (&prefixes)[N])
+{
+    return std::any_of(std::begin(prefixes), std::end(prefixes),
+                       [&text](QLatin1String prefix) { return text.startsWith(prefix); });
+}
 
 quint64 inodeOf(const QFile &file)
 {
@@ -58,9 +85,17 @@ std::optional<OnAccessLogLine> OnAccessLog::parseLine(const QString &line)
     text.remove(datePrefix);
 
     OnAccessLogLine result;
-    if (text.startsWith(QLatin1String("ERROR: "))) {
+    // Première ligne écrite par clamonacc à chaque lancement.
+    static const QRegularExpression runSeparator(QStringLiteral("^-{10,}$"));
+    if (runSeparator.match(text).hasMatch()) {
+        result.type = OnAccessLogLine::Type::RunStart;
+        return result;
+    }
+
+    if (text.startsWith(QLatin1String("ERROR: ")) || startsWithAny(text, kUnprefixedErrors)) {
         result.type = OnAccessLogLine::Type::Error;
-        result.message = text.mid(7).trimmed();
+        result.message = text.startsWith(QLatin1String("ERROR: ")) ? text.mid(7).trimmed() : text;
+        result.benign = startsWithAny(result.message, kBenignErrors);
         return result;
     }
     if (text.endsWith(QLatin1String(" FOUND"))) {
@@ -81,6 +116,7 @@ std::optional<OnAccessLogLine> OnAccessLog::parseLine(const QString &line)
 void OnAccessLog::start()
 {
     QList<OnAccessDetection> history;
+    QString lastError; // dernière erreur du dernier lancement
     QFile file(m_path);
     if (file.open(QIODevice::ReadOnly)) {
         m_inode = inodeOf(file);
@@ -100,8 +136,17 @@ void OnAccessLog::start()
 
         for (const QByteArray &raw : std::as_const(lines)) {
             const std::optional<OnAccessLogLine> line = parseLine(QString::fromUtf8(raw));
-            if (!line || line->type != OnAccessLogLine::Type::Detection)
+            if (!line)
                 continue;
+            if (line->type == OnAccessLogLine::Type::RunStart) {
+                lastError.clear();
+                continue;
+            }
+            if (line->type == OnAccessLogLine::Type::Error) {
+                if (!line->benign)
+                    lastError = line->message;
+                continue;
+            }
             // Doublon immédiat (écriture puis lecture du même fichier) : ignoré.
             if (!history.isEmpty() && history.last().path == line->path && history.last().threat == line->threat)
                 continue;
@@ -113,6 +158,10 @@ void OnAccessLog::start()
 
     rearm();
     emit historyLoaded(history);
+    // Le service a pu échouer avant le lancement de l'application : la cause
+    // est dans le journal.
+    if (!lastError.isEmpty())
+        emit errorLogged(lastError);
 }
 
 void OnAccessLog::rearm()
@@ -171,10 +220,18 @@ void OnAccessLog::readNewData()
         const std::optional<OnAccessLogLine> line = parseLine(QString::fromUtf8(raw));
         if (!line)
             continue;
-        if (line->type == OnAccessLogLine::Type::Error) {
-            emit errorLogged(line->message);
-        } else if (!isRecentDuplicate(line->path, line->threat)) {
-            emit threatDetected({QDateTime::currentDateTime(), line->path, line->threat});
+        switch (line->type) {
+        case OnAccessLogLine::Type::RunStart:
+            emit runStarted();
+            break;
+        case OnAccessLogLine::Type::Error:
+            if (!line->benign)
+                emit errorLogged(line->message);
+            break;
+        case OnAccessLogLine::Type::Detection:
+            if (!isRecentDuplicate(line->path, line->threat))
+                emit threatDetected({QDateTime::currentDateTime(), line->path, line->threat});
+            break;
         }
     }
 }

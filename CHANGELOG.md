@@ -8,6 +8,24 @@ portent la version `0.0.0~dev`.
 
 ### Corrigé
 
+- **Protection en temps réel : les téléchargements n'étaient pas détectés.** `clamonacc`
+  n'analysait un fichier qu'à son ouverture, donc vide pour un fichier ouvert puis rempli
+  (téléchargement, `.part` renommé) : la menace n'était vue qu'à la réouverture du fichier. La
+  configuration active maintenant l'analyse à l'écriture (`OnAccessExtraScanning yes`).
+- **Arrêt inattendu de `clamonacc` non relancé et affiché comme « désactivée ».** `clamonacc`
+  quitte avec le code 0 même sur une erreur fatale (limite inotify atteinte, plantage) :
+  `Restart=on-failure` ne le relançait pas. Le service utilise maintenant `Restart=always`, et
+  l'onglet affiche « en erreur » avec la cause tant que systemd le relance.
+- Diagnostic des erreurs de `clamonacc`, vérifié sur les messages réels de la version 1.5.4 :
+  - la limite inotify atteinte (`ClamInotif: could not watch path ..., No space left on device`)
+    n'était jamais reconnue ;
+  - `Wait timeout exceeded; Could not connect to clamd` (écrit sans `ERROR:`) était ignoré ;
+  - les erreurs sans gravité (dossier supprimé avant d'être surveillé, par exemple par Zen ou
+    Firefox dans leur cache) remplaçaient la vraie cause d'un échec ; elles sont ignorées ;
+  - la cause d'un échec survenu avant le lancement de l'application est lue dans le journal, et
+    une erreur d'un lancement précédent de `clamonacc` n'est plus utilisée pour expliquer un
+    nouvel échec.
+
 - **Paquets `.deb` et `.rpm` : le service de protection en temps réel manquait.** Après
   installation, l'application affichait « Service de protection non installé ». Les paquets
   installent maintenant :

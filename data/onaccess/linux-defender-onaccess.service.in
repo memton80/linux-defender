@@ -20,7 +20,10 @@ ExecStartPre=/usr/bin/chmod 0644 @DEFENDER_ONACCESS_LOG@
 ExecStart=@DEFENDER_CLAMONACC@ --foreground --fdpass --wait --config-file=@DEFENDER_ONACCESS_CONFIG@ --log=@DEFENDER_ONACCESS_LOG@
 # SIGHUP : clamonacc rouvre son journal (après une rotation).
 ExecReload=/bin/kill -HUP $MAINPID
-Restart=on-failure
+# always, pas on-failure : clamonacc quitte avec le code 0 même sur une erreur
+# fatale (limite inotify atteinte, plantage), comme lors d'un arrêt demandé.
+# Seul systemd sait si l'arrêt a été demandé : il ne relance alors pas.
+Restart=always
 RestartSec=30
 # root (fanotify l'exige), mais limité aux deux capacités nécessaires :
 # CAP_SYS_ADMIN pour fanotify, CAP_DAC_READ_SEARCH pour suivre les dossiers privés.

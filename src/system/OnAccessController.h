@@ -102,7 +102,7 @@ private:
     QVariantMap m_unit;            // propriétés systemd du service de Linux Defender
     bool m_distributionServiceActive = false;
     bool m_systemdReachable = true;
-    QString m_lastError;           // dernière erreur écrite par clamonacc
+    QString m_lastError;           // dernière erreur du lancement en cours de clamonacc
     State m_state = State::Unknown;
     QString m_message;
 };

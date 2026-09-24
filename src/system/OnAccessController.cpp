@@ -36,6 +36,12 @@ OnAccessController::OnAccessController(const QDBusConnection &bus, const QString
         m_lastError = error;
         updateState();
     });
+    // Nouveau lancement de clamonacc : l'erreur du lancement précédent
+    // n'expliquerait plus un nouvel échec.
+    connect(&m_log, &OnAccessLog::runStarted, this, [this] {
+        m_lastError.clear();
+        updateState();
+    });
 
     if (m_bus.isConnected()) {
         // systemd signale lui-même les changements d'état du service (démarré,
@@ -136,6 +142,7 @@ void OnAccessController::updateState()
     const QString service = QString::fromLatin1(kServiceName);
     const QString loadState = m_unit.value(QStringLiteral("LoadState")).toString();
     const QString activeState = m_unit.value(QStringLiteral("ActiveState")).toString();
+    const QString subState = m_unit.value(QStringLiteral("SubState")).toString();
 
     State state = State::Unknown;
     QString message;
@@ -154,6 +161,16 @@ void OnAccessController::updateState()
                      "Il est installé par les paquets .deb et .rpm de Linux Defender, "
                      "pas par l'archive .tar.gz.")
                       .arg(service);
+    } else if (subState.contains(QLatin1String("auto-restart"))) {
+        // clamonacc s'est arrêté sans que personne ne l'ait demandé, même avec
+        // le code 0 (il quitte ainsi sur une erreur fatale) : avec Restart=always,
+        // systemd le relance (« auto-restart », « dead-before-auto-restart »...).
+        // Un arrêt demandé (systemctl stop) mène, lui, à « inactive ».
+        state = State::Failed;
+        message = (m_lastError.isEmpty()
+                       ? tr("clamonacc s'est arrêté de lui-même.\nDétails : journalctl -u %1").arg(service)
+                       : explainError(m_lastError))
+            + tr("\nsystemd le relance automatiquement.");
     } else if (activeState == QLatin1String("active") || activeState == QLatin1String("reloading")) {
         state = State::Active;
         message = m_watchedPaths.isEmpty()
@@ -247,7 +264,7 @@ QStringList OnAccessController::readWatchedPaths(const QString &configPath)
 
 QString OnAccessController::explainError(const QString &logError)
 {
-    // Messages relevés sur clamonacc 1.5.
+    // Messages relevés sur clamonacc 1.5.4.
     if (logError.contains(QLatin1String("fanotify_init failed")) || logError.contains(QLatin1String("elevated permissions")))
         return tr("clamonacc n'a pas les privilèges nécessaires : fanotify exige les droits root "
                   "(capacité CAP_SYS_ADMIN). Le service doit être lancé par systemd, en root.");
@@ -256,8 +273,10 @@ QString OnAccessController::explainError(const QString &logError)
         return tr("clamonacc ne peut pas joindre clamd : vérifiez que clamd est démarré et que le "
                   "socket indiqué par LocalSocket dans %1 est le bon.")
             .arg(QString::fromLatin1(kConfigPath));
-    if (logError.contains(QLatin1String("inotify"), Qt::CaseInsensitive)
-        && (logError.contains(QLatin1String("No space left")) || logError.contains(QLatin1String("limit"))))
+    // « ClamInotif: could not watch path '/home', No space left on device » :
+    // limite atteinte au démarrage, clamonacc s'arrête aussitôt.
+    if (logError.startsWith(QLatin1String("ClamInotif: could not watch path"))
+        && logError.contains(QLatin1String("No space left on device")))
         return tr("Trop de dossiers à surveiller : augmentez la limite du noyau "
                   "fs.inotify.max_user_watches (voir le README).");
     return tr("Erreur de clamonacc : %1\nDétails : journalctl -u %2").arg(logError, QString::fromLatin1(kServiceName));

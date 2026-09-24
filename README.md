@@ -188,8 +188,8 @@ Le socket utilisé est, dans l'ordre :
 > attendant, activez le service à la main (voir [Activer la protection](#activer-la-protection)).
 
 `clamonacc` est le programme de ClamAV qui surveille les fichiers en temps réel : le noyau
-(fanotify) lui signale chaque fichier ouvert ou modifié dans les dossiers surveillés, et il le
-transmet à clamd pour analyse. Linux Defender ne refait pas ce travail : il **supervise** le
+(fanotify et inotify) lui signale chaque fichier ouvert, créé, écrit ou renommé dans les dossiers
+surveillés, et il le transmet à clamd pour analyse. Linux Defender ne refait pas ce travail : il **supervise** le
 service `linux-defender-onaccess.service` qui lance `clamonacc`, et lit son journal pour vous
 prévenir de chaque détection :
 
@@ -214,12 +214,18 @@ sudo systemctl disable --now linux-defender-onaccess.service
 L'onglet **Protection en temps réel** se met à jour tout seul. En cas d'échec, il explique la
 cause ; le détail est aussi dans `journalctl -u linux-defender-onaccess.service`.
 
+Si `clamonacc` s'arrête sans que vous l'ayez demandé, systemd le relance 30 secondes plus tard
+(`Restart=always`) et l'onglet affiche « Protection en temps réel en erreur », avec la cause lue
+dans le journal. `clamonacc` quitte en effet avec le code 0 même sur une erreur fatale (limite
+inotify atteinte, plantage), exactement comme lors d'un arrêt demandé : seul systemd sait
+distinguer les deux. Un arrêt demandé (`systemctl stop` ou `disable --now`) n'est jamais relancé.
+
 Fichiers installés par les paquets (pas par l'archive `.tar.gz`) :
 
 | Fichier | Rôle |
 |---|---|
 | `/usr/lib/systemd/system/linux-defender-onaccess.service` | service qui lance `clamonacc` |
-| `/etc/linux-defender/clamonacc.conf` | configuration de `clamonacc` : socket de clamd, dossiers surveillés (`/home` par défaut) |
+| `/etc/linux-defender/clamonacc.conf` | configuration de `clamonacc` : socket de clamd, dossiers surveillés (`/home` par défaut), analyse à l'écriture |
 | `/etc/logrotate.d/linux-defender` | rotation mensuelle du journal |
 
 `clamd.conf` n'est pas modifié : `clamonacc` lit sa propre configuration. Après avoir modifié
@@ -273,21 +279,50 @@ apparaissent avec la mention « Avant le lancement ».
 
 - **Détection seulement** : l'accès aux fichiers n'est pas bloqué (`OnAccessPrevention no`), et
   les fichiers infectés restent en place.
-- **Nombre de dossiers** : `clamonacc` suit les sous-dossiers des dossiers surveillés avec
-  inotify. Un très grand nombre de dossiers peut dépasser la limite du noyau ; l'onglet le
-  signale. Pour l'augmenter :
+- **Nombre de dossiers** : `clamonacc` pose une surveillance inotify sur chaque dossier sous les
+  dossiers surveillés. Si leur nombre dépasse la limite du noyau au démarrage, `clamonacc` écrit
+  `could not watch path '/home', No space left on device` et s'arrête ; l'onglet le signale et
+  systemd le relance toutes les 30 secondes. Pour comparer la limite au nombre de dossiers, puis
+  l'augmenter :
 
   ```sh
+  cat /proc/sys/fs/inotify/max_user_watches
+  sudo find /home -type d | wc -l
   echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/90-linux-defender.conf
   sudo sysctl --system
   ```
 
+- **Erreurs « watch descriptor issue » dans le journal, sans gravité.** Des lignes comme :
+
+  ```
+  ERROR: ClamInotif: watch descriptor issue when adding watch for /home/alex/.var/app/app.zen_browser.zen/cache/zen/5alpemjo.Default (release)/safebrowsing-backup
+  ERROR: ClamInotif: could not add element to hash table for .../safebrowsing-updating
+  ERROR: ClamInotif: issue when adding watch for .../safebrowsing-backup/google4
+  ```
+
+  apparaissent quand un dossier est créé puis supprimé avant que `clamonacc` ait pu le surveiller.
+  C'est le cas à chaque mise à jour des listes Safe Browsing de Firefox et de ses dérivés (Zen,
+  y compris en Flatpak sous `~/.var/app/`) : `safebrowsing-updating` est renommé en
+  `safebrowsing-backup`, puis supprimé aussitôt. Le dossier n'existant plus, il n'y a rien à
+  protéger, et `clamonacc` continue normalement : l'application ignore ces lignes. Elles ne
+  signalent pas la limite inotify (reproduites avec 143 dossiers pour une limite de 130 000) ;
+  le vrai dépassement de limite se reconnaît à la ligne `could not watch path` ci-dessus.
+
+  Aucun dossier n'est exclu par défaut. `OnAccessExcludePath` n'accepte pas de jokers
+  (`~/.var/app/*/cache` est impossible), et les caches comme `~/.cache` sont justement des
+  endroits où un programme malveillant peut déposer ses fichiers. Pour exclure malgré tout un
+  dossier précis, ajoutez une ligne `OnAccessExcludePath /home/alex/.var/app/app.zen_browser.zen/cache`
+  (chemin complet) à `/etc/linux-defender/clamonacc.conf`, puis redémarrez le service.
+
 - **Montages réseau et FUSE** (NFS, SMB/CIFS, sshfs...) : les modifications faites depuis une
   autre machine sont invisibles pour fanotify, et les montages FUSE peuvent ne produire aucun
   événement. Ces fichiers ne sont pas protégés en temps réel ; un scan manuel reste possible.
-- **Charge** : chaque fichier ouvert ou modifié dans les dossiers surveillés est analysé par
-  clamd. Les activités qui touchent beaucoup de fichiers (compilation, git, caches de
-  navigateur, machines virtuelles) consomment donc du processeur. Les fichiers de plus de 5 Mo
+- **Charge** : chaque fichier ouvert, créé, écrit ou renommé dans les dossiers surveillés est
+  analysé par clamd. L'analyse à l'écriture (`OnAccessExtraScanning yes`) est nécessaire : sans
+  elle, un fichier n'est analysé qu'à son ouverture, et un téléchargement (fichier ouvert vide
+  puis rempli, ou écrit en `.part` puis renommé) n'est détecté que lorsque quelqu'un le rouvre.
+  Les activités qui touchent beaucoup de fichiers (compilation, git, caches de navigateur,
+  machines virtuelles) consomment donc du processeur. Les fichiers de plus de 5 Mo
   (`OnAccessMaxFileSize`) ne sont pas analysés.
 - **Service de la distribution** : Debian et Ubuntu fournissent `clamav-clamonacc.service`, qui
   déplace les fichiers infectés dans `/root/quarantine`. Il ne doit pas tourner en même temps que
