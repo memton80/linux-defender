@@ -182,10 +182,10 @@ Le socket utilisé est, dans l'ordre :
 
 ## Protection en temps réel (clamonacc)
 
-> **En cours (étape 5).** Les paquets `.deb` et `.rpm` installent le service
-> `linux-defender-onaccess.service`, **désactivé**. L'application affiche son état et les menaces
-> détectées. La case « Activer la protection en temps réel » des Paramètres arrive ensuite ; en
-> attendant, activez le service à la main (voir [Activer la protection](#activer-la-protection)).
+> Les paquets `.deb` et `.rpm` installent le service `linux-defender-onaccess.service`,
+> **désactivé**. Activez-le à la main (voir [Activer la protection](#activer-la-protection)) ; une
+> case « Activer la protection en temps réel » dans les Paramètres arrivera dans une prochaine
+> version.
 
 `clamonacc` est le programme de ClamAV qui surveille les fichiers en temps réel : le noyau
 (fanotify et inotify) lui signale chaque fichier ouvert, créé, écrit ou renommé dans les dossiers
@@ -495,8 +495,9 @@ linux-defender/
 - [x] Étape 3 : scan à la demande (FILDES), scan automatique des clés USB (UDisks2), instance
       unique, démarrage automatique, paramètres
 - [x] Étape 4 : CI GitHub Actions, paquets `.deb` et `.rpm`, archive `.tar.gz`, releases
-- [ ] Étape 5 : protection en temps réel (`clamonacc`) — supervision, détections et service
-      systemd (installé désactivé par les paquets) faits ; activation depuis « Paramètres » à venir
+- [ ] Étape 5 : protection en temps réel (`clamonacc`) — supervision, détections, alertes et
+      service systemd (installé désactivé par les paquets) faits dans la **version 1.0.0** ;
+      activation depuis « Paramètres » à venir
 - [ ] Plus tard : quarantaine, historique, planification, scans en parallèle, son des alertes
 
 ## Historique des versions
