@@ -18,7 +18,8 @@ session.
 Les paquets de chaque version sont sur la page des releases :
 **<https://github.com/memton80/linux-defender/releases>**.
 
-Chaque release contient trois fichiers (remplacez `X.Y.Z` par la version) :
+Version actuelle : **1.0.2**. Chaque release contient trois fichiers (remplacez `X.Y.Z` par la
+version, par exemple `1.0.2`) :
 
 | Fichier | Pour |
 |---|---|
@@ -62,7 +63,7 @@ cp -r linux-defender-X.Y.Z-linux-x86_64/bin linux-defender-X.Y.Z-linux-x86_64/sh
 
 ### Versions de développement
 
-Chaque push sur `main` produit aussi les trois fichiers, en version `0.0.0-dev` : onglet
+Chaque push sur `main` produit aussi les trois fichiers, avec la version du fichier `VERSION` : onglet
 [Actions](https://github.com/memton80/linux-defender/actions/workflows/ci.yml), choisir un run, section « Artifacts »
 (connexion à GitHub nécessaire).
 
@@ -235,10 +236,11 @@ Le socket utilisé est, dans l'ordre :
 
 ## Protection en temps réel (clamonacc)
 
-> Les paquets `.deb` et `.rpm` installent le service `linux-defender-onaccess.service`,
-> **désactivé**. Activez-le à la main (voir [Activer la protection](#activer-la-protection)) ; une
-> case « Activer la protection en temps réel » dans les Paramètres arrivera dans une prochaine
-> version.
+> Depuis la version 1.0.2, les paquets `.deb` et `.rpm` installent le service
+> `linux-defender-onaccess.service` **activé et démarré** : la protection en temps réel
+> fonctionne dès l'installation (voir [Activer ou désactiver la
+> protection](#activer-ou-désactiver-la-protection)). Une case dans les Paramètres arrivera dans
+> une prochaine version.
 
 `clamonacc` est le programme de ClamAV qui surveille les fichiers en temps réel : le noyau
 (fanotify et inotify) lui signale chaque fichier ouvert, créé, écrit ou renommé dans les dossiers
@@ -275,15 +277,30 @@ malveillant. Les réglages des alertes (affichage, historique, mode « Ne pas d�
 de « Linux Defender » dans Configuration du système → Notifications. Les scans de clés USB utilisent les mêmes notifications ;
 des menaces sur une clé donnent aussi une alerte critique.
 
-### Activer la protection
+### Activer ou désactiver la protection
 
-Le service n'est jamais activé à l'installation du paquet. Pour l'activer (démarrage immédiat et
-à chaque démarrage de la machine), puis le désactiver :
+Les paquets activent le service (démarrage à chaque démarrage de la machine) et le démarrent :
+
+- à la première installation ;
+- lors d'une mise à jour depuis une version antérieure à 1.0.2, où il était installé désactivé.
+
+Ensuite, votre choix est respecté : un service désactivé le reste lors des mises à jour. Pour le
+désactiver, puis le réactiver :
 
 ```sh
-sudo systemctl enable --now linux-defender-onaccess.service
 sudo systemctl disable --now linux-defender-onaccess.service
+sudo systemctl enable --now linux-defender-onaccess.service
 ```
+
+Sous Fedora, l'activation passe par une règle de préréglage installée par le paquet
+(`/usr/lib/systemd/system-preset/80-linux-defender.preset`), qui l'emporte sur la règle par
+défaut de Fedora (« désactiver les services inconnus »).
+
+`clamonacc` n'est que recommandé par les paquets. S'il est absent, le service est simplement
+ignoré (`ConditionPathExists`), sans échec répété, et la page indique comment l'installer ; une
+fois `clamonacc` installé, démarrez le service avec la commande ci-dessus (ou redémarrez la
+machine). `clamonacc` est lancé avec `--wait` : si clamd n'est pas encore prêt (signatures en
+cours de téléchargement, socket pas encore configuré sous Fedora), il l'attend.
 
 La page **Protection en temps réel** se met à jour toute seule. En cas d'échec, elle explique la
 cause ; le détail est aussi dans `journalctl -u linux-defender-onaccess.service`.
@@ -298,7 +315,8 @@ Fichiers installés par les paquets (pas par l'archive `.tar.gz`) :
 
 | Fichier | Rôle |
 |---|---|
-| `/usr/lib/systemd/system/linux-defender-onaccess.service` | service qui lance `clamonacc` |
+| `/usr/lib/systemd/system/linux-defender-onaccess.service` | service qui lance `clamonacc` (activé à l'installation) |
+| `/usr/lib/systemd/system-preset/80-linux-defender.preset` | Fedora : active le service à l'installation |
 | `/etc/linux-defender/clamonacc.conf` | configuration de `clamonacc` : socket de clamd, dossiers surveillés (`/home` par défaut), analyse à l'écriture |
 | `/etc/logrotate.d/linux-defender` | rotation mensuelle du journal |
 
@@ -475,16 +493,18 @@ produit. Ils sont aussi relancés pendant la construction de chaque paquet.
 
 ### Publier une version
 
+La version est écrite à un seul endroit : le fichier `VERSION` à la racine (`1.0.2`). CMake,
+les paquets, la page de manuel et la fenêtre « À propos » la lisent tous là. Pour publier :
+
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+echo 1.0.3 > VERSION        # puis journal des modifications, commit, fusion dans main
+git tag v1.0.3
+git push origin v1.0.3
 ```
 
-Le workflow crée alors la release GitHub avec les trois fichiers. Un tag avec suffixe
-(`v0.1.0-rc1`) crée une préversion.
-
-La version vient du tag : `v1.2.3` donne `1.2.3`. Hors tag, c'est `0.0.0-dev`, notée
-`0.0.0~dev` dans les paquets (le `~` classe cette version avant toute version publiée).
+Le workflow crée alors la release GitHub avec les trois fichiers. Le tag doit correspondre au
+fichier `VERSION` (sinon la CI s'arrête). Un tag avec suffixe (`v1.0.3-rc1`) crée une
+préversion, notée `1.0.3~rc1` dans les paquets (le `~` la classe avant la version finale).
 
 ### Construire les paquets en local
 
@@ -503,6 +523,7 @@ Les fichiers produits sont dans `dist/`. Les recettes des paquets sont dans `pac
 
 ```
 linux-defender/
+├── VERSION                   # numéro de version (seul endroit où le changer)
 ├── CMakeLists.txt            # projet, options, dépendances Qt
 ├── src/
 │   ├── CMakeLists.txt        # cibles : defender_core, defender_system (bibliothèques) + linux-defender
@@ -539,10 +560,10 @@ linux-defender/
 ├── data/
 │   ├── icons/*.svg           # icônes SVG (placeholders à remplacer)
 │   ├── linux-defender.desktop
-│   ├── linux-defender.1      # page de manuel (man linux-defender)
+│   ├── linux-defender.1.in   # page de manuel (man linux-defender), version ajoutée par CMake
 │   └── onaccess/             # service systemd, configuration de clamonacc, rotation du journal
 ├── packaging/
-│   ├── version.sh            # version à partir du tag git
+│   ├── version.sh            # version : fichier VERSION (vérifiée contre le tag git)
 │   ├── build-deb.sh, build-rpm.sh, build-tarball.sh
 │   ├── debian/               # paquet .deb (debhelper)
 │   └── rpm/                  # paquet .rpm (fichier spec)
@@ -560,8 +581,8 @@ linux-defender/
       unique, démarrage automatique, paramètres
 - [x] Étape 4 : CI GitHub Actions, paquets `.deb` et `.rpm`, archive `.tar.gz`, releases
 - [ ] Étape 5 : protection en temps réel (`clamonacc`) — supervision, détections, alertes et
-      service systemd (installé désactivé par les paquets) faits dans la **version 1.0.0** ;
-      activation depuis « Paramètres » à venir
+      service systemd faits dans la **version 1.0.0**, service activé à l'installation depuis la
+      **version 1.0.2** ; case dans les « Paramètres » à venir
 - [x] Interface : tableau de bord, historique des analyses, analyse rapide et complète,
       exclusions, paramètres en pages
 - [ ] Plus tard : quarantaine, planification, scans en parallèle, son des alertes

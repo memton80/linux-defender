@@ -542,6 +542,8 @@ void TestOnAccess::generatedFilesMatchCode()
     // clamonacc quitte avec le code 0 même sur une erreur fatale : seul
     // Restart=always le relance (et fait apparaître « auto-restart »).
     QVERIFY(service.contains(QLatin1String("\nRestart=always\n")));
+    // Sans clamonacc (seulement recommandé), le service est ignoré, pas relancé en boucle.
+    QVERIFY(service.contains(QLatin1String("\nConditionPathExists=/")));
     // clamonacc ignore SIGHUP : un ExecReload qui l'envoie ne servirait à rien.
     QVERIFY(!service.contains(QLatin1String("\nExecReload=")));
 

@@ -1,8 +1,19 @@
 cmake_minimum_required(VERSION 3.21)
 
-# Version de l'application (--version) et des paquets. La CI la déduit du tag
-# git : v1.2.3 donne 1.2.3 ; hors tag, c'est 0.0.0-dev (voir packaging/version.sh).
-set(DEFENDER_VERSION "0.0.0-dev" CACHE STRING "Version de l'application")
+# Version de l'application (--version, « À propos ») et des paquets : celle du
+# fichier VERSION, seul endroit où la changer. Les paquets et la CI la passent
+# explicitement (-DDEFENDER_VERSION=..., voir packaging/version.sh).
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" DEFENDER_FILE_VERSION LIMIT_COUNT 1)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+set(DEFENDER_VERSION "" CACHE STRING "Version de l'application (vide : fichier VERSION)")
+# Dossiers de build créés avant le fichier VERSION : leur cache garde
+# l'ancienne valeur par défaut, qui ne doit plus s'afficher.
+if(DEFENDER_VERSION STREQUAL "0.0.0-dev")
+    set(DEFENDER_VERSION "" CACHE STRING "Version de l'application (vide : fichier VERSION)" FORCE)
+endif()
+if(DEFENDER_VERSION STREQUAL "")
+    set(DEFENDER_VERSION "${DEFENDER_FILE_VERSION}")
+endif()
 string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" DEFENDER_VERSION_NUMBER "${DEFENDER_VERSION}")
 if(NOT DEFENDER_VERSION_NUMBER)
     message(FATAL_ERROR "DEFENDER_VERSION doit commencer par X.Y.Z (reçu : « ${DEFENDER_VERSION} »)")

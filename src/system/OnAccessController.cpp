@@ -186,7 +186,11 @@ void OnAccessController::updateState()
         message = tr("Démarrage de la protection en temps réel…");
     } else {
         state = State::Inactive;
-        message = tr("La protection en temps réel est désactivée.");
+        // Les paquets l'activent à l'installation : elle a été désactivée
+        // depuis, ou clamonacc a été installé après Linux Defender.
+        message = tr("La protection en temps réel est désactivée. Pour l'activer :\n"
+                     "    sudo systemctl enable --now %1")
+                      .arg(service);
     }
 
     // ClamAV crée son journal en 0640 (root:root) : s'il n'a pas été créé

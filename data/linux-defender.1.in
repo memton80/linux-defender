@@ -1,5 +1,6 @@
 .\" -*- coding: UTF-8 -*-
-.TH LINUX-DEFENDER 1 "2026" "linux-defender" "Commandes utilisateur"
+.\" Fichier généré à partir de data/linux-defender.1.in (version : fichier VERSION).
+.TH LINUX-DEFENDER 1 "2026" "linux-defender @DEFENDER_VERSION@" "Commandes utilisateur"
 .SH NOM
 linux-defender \- interface graphique légère pour l'antivirus ClamAV
 .SH SYNOPSIS

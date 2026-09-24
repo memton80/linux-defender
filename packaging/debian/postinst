@@ -3,15 +3,14 @@ set -e
 
 SERVICE=linux-defender-onaccess.service
 
-if [ "$1" = "configure" ] && [ -d /run/systemd/system ]; then
-    # systemd relit ses fichiers pour voir le service de protection en temps
-    # réel tout de suite. Le service n'est ni activé ni démarré : c'est à
-    # l'utilisateur de le faire.
-    systemctl --system daemon-reload >/dev/null || true
-    # Mise à jour : s'il tournait déjà, il redémarre avec la nouvelle version.
-    if [ -n "$2" ]; then
-        deb-systemd-invoke try-restart "$SERVICE" >/dev/null || true
-    fi
+# Mise à jour depuis une version antérieure à 1.0.2 : le service y était
+# installé désactivé d'office, et deb-systemd-helper a gardé cet état (il ne
+# réactive jamais un service qu'il croit désactivé par l'administrateur). Cet
+# état est oublié, puis le service est activé comme lors d'une première
+# installation ; debhelper le démarre ensuite (plus bas).
+if [ "$1" = "configure" ] && [ -n "$2" ] && dpkg --compare-versions "$2" lt 1.0.2; then
+    deb-systemd-helper purge "$SERVICE" >/dev/null || true
+    deb-systemd-helper enable "$SERVICE" >/dev/null || true
 fi
 
 # Première installation seulement : rappel des réglages nécessaires côté clamd.
@@ -23,8 +22,9 @@ dont le socket est en général /run/clamav/clamd.ctl.
 Si l'application signale « Permission refusée », ajoutez votre utilisateur au
 groupe qu'elle indique (en général « clamav »), puis reconnectez-vous :
     sudo usermod -aG clamav $USER
-Protection en temps réel (désactivée par défaut) :
-    sudo systemctl enable --now linux-defender-onaccess.service
+La protection en temps réel (linux-defender-onaccess.service) est activée ;
+pour la désactiver :
+    sudo systemctl disable --now linux-defender-onaccess.service
 
 MESSAGE
 fi

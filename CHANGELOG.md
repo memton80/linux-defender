@@ -1,10 +1,25 @@
 # Journal des modifications
 
 Les versions publiées correspondent aux tags `vX.Y.Z` (voir les
-[releases](https://github.com/memton80/linux-defender/releases)). Les paquets construits hors tag
-portent la version `0.0.0~dev`.
+[releases](https://github.com/memton80/linux-defender/releases)). Le numéro de version est écrit
+dans le fichier `VERSION` ; avant la 1.0.2, les paquets construits hors tag portaient la version
+`0.0.0~dev`.
 
-## [Non publié]
+## [1.0.2] — 2026-09-24
+
+### Modifié
+
+- **Protection en temps réel activée à l'installation.** Les paquets `.deb` et `.rpm` activent et
+  démarrent `linux-defender-onaccess.service` à la première installation, et lors d'une mise à
+  jour depuis une version antérieure (où il était installé désactivé). Ensuite, un service
+  désactivé par l'administrateur le reste. Sous Fedora, l'activation passe par une règle de
+  préréglage (`80-linux-defender.preset`). Sans `clamonacc` (seulement recommandé), le service est
+  ignoré au lieu d'échouer toutes les 30 secondes ; la page indique comment l'installer, et
+  comment réactiver un service désactivé.
+- **Version 1.0.2 partout** : un seul fichier `VERSION` fournit la version à l'application
+  (« À propos », `--version`, barre latérale), aux paquets, à la page de manuel et à l'archive.
+  Les builds hors tag n'affichent plus `0.0.0-dev`. Un tag de release qui ne correspond pas au
+  fichier `VERSION` arrête la CI.
 
 ### Ajouté
 

@@ -106,7 +106,9 @@ qt_add_resources(linux-defender "icons"
 install(TARGETS linux-defender RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT application)
 install(FILES ${DATA_DIR}/linux-defender.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications COMPONENT application)
 install(FILES ${DATA_DIR}/icons/linux-defender.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps COMPONENT application)
-install(FILES ${DATA_DIR}/linux-defender.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1 COMPONENT application)
+# Page de manuel : la version y est inscrite (en-tête de « man linux-defender »).
+configure_file(${DATA_DIR}/linux-defender.1.in ${CMAKE_CURRENT_BINARY_DIR}/linux-defender.1 @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/linux-defender.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1 COMPONENT application)
 
 # Valeurs propres à chaque distribution, fixées par les paquets
 # (packaging/debian/rules, packaging/rpm/linux-defender.spec). Par défaut :

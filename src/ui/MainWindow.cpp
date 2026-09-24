@@ -107,7 +107,7 @@ QWidget *MainWindow::createSidebar()
     Widgets::setIcon(appIcon, QApplication::windowIcon(), style()->pixelMetric(QStyle::PM_LargeIconSize, nullptr, this));
     auto *name = new QLabel(QApplication::applicationDisplayName());
     name->setFont(Widgets::scaledFont(name->font(), 1.2, true));
-    auto *tagline = new QLabel(tr("Antivirus ClamAV"));
+    auto *tagline = new QLabel(tr("Antivirus ClamAV · %1").arg(QApplication::applicationVersion()));
     Widgets::setSecondary(tagline);
     auto *names = new QVBoxLayout;
     names->setSpacing(0);
