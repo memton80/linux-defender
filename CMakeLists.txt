@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(linux-dedender
+project(linux-defender
     VERSION 0.1.0
     DESCRIPTION "Interface graphique légère pour l'antivirus ClamAV (clamd)"
-    HOMEPAGE_URL "https://github.com/memton80/linux-dedender"
+    HOMEPAGE_URL "https://github.com/memton80/linux-defender"
     LANGUAGES CXX
 )
 
@@ -19,7 +19,7 @@ endif()
 # Tous les exécutables (application + tests) dans build/bin/.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-option(DEDENDER_BUILD_TESTS "Compiler les tests unitaires" ON)
+option(DEFENDER_BUILD_TESTS "Compiler les tests unitaires" ON)
 
 # Qt 6.4 minimum : c'est la version d'Ubuntu 24.04 (cible du futur .deb).
 # Fedora 44 fournit une version plus récente, compatible.
@@ -31,7 +31,7 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 
 add_subdirectory(src)
 
-if(DEDENDER_BUILD_TESTS)
+if(DEFENDER_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()

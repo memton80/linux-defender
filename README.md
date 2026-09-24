@@ -1,4 +1,4 @@
-# linux-dedender
+# linux-defender
 
 Interface graphique native et légère pour l'antivirus [ClamAV](https://www.clamav.net/),
 pensée pour KDE Plasma (thème Breeze clair/sombre automatique).
@@ -11,10 +11,10 @@ par son socket Unix, avec le protocole natif de clamd.
 ## Arborescence
 
 ```
-linux-dedender/
+linux-defender/
 ├── CMakeLists.txt            # projet, options, dépendances Qt
 ├── src/
-│   ├── CMakeLists.txt        # cibles : dedender_core (bibliothèque) + linux-dedender (exécutable)
+│   ├── CMakeLists.txt        # cibles : defender_core (bibliothèque) + linux-defender (exécutable)
 │   ├── main.cpp              # point d'entrée
 │   ├── core/                 # logique métier : QtCore + QtNetwork, aucune dépendance à l'UI
 │   │   └── ClamdClient.*     # communication avec clamd (socket Unix, protocole natif)
@@ -56,9 +56,9 @@ cmake --build build
 ctest --test-dir build --output-on-failure   # tests unitaires
 ```
 
-Le binaire se trouve dans `build/bin/linux-dedender`.
+Le binaire se trouve dans `build/bin/linux-defender`.
 
-Option CMake disponible : `-DDEDENDER_BUILD_TESTS=OFF` pour ne pas compiler les tests.
+Option CMake disponible : `-DDEFENDER_BUILD_TESTS=OFF` pour ne pas compiler les tests.
 
 ## Configurer clamd
 
@@ -105,8 +105,8 @@ Fermez ensuite votre session et rouvrez-la pour que le changement prenne effet.
 ## Utilisation (étape 1)
 
 ```sh
-./build/bin/linux-dedender                           # socket détecté automatiquement
-./build/bin/linux-dedender --socket /chemin/clamd.sock
+./build/bin/linux-defender                           # socket détecté automatiquement
+./build/bin/linux-defender --socket /chemin/clamd.sock
 ```
 
 Le socket est détecté ainsi :

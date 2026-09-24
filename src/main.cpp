@@ -10,8 +10,8 @@
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
-    QCoreApplication::setApplicationName(QStringLiteral("linux-dedender"));
-    QCoreApplication::setApplicationVersion(QStringLiteral(DEDENDER_VERSION));
+    QCoreApplication::setApplicationName(QStringLiteral("linux-defender"));
+    QCoreApplication::setApplicationVersion(QStringLiteral(DEFENDER_VERSION));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QCoreApplication::translate("main", "Vérifie la communication avec clamd (PING)."));
