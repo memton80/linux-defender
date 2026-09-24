@@ -60,40 +60,6 @@ QString socketGroup(const QString &socketPath)
     return group;
 }
 
-QString describeError(ClamdClient::Error error, const QString &socketPath, const QString &detail)
-{
-    switch (error) {
-    case ClamdClient::Error::NoError:
-        return {};
-    case ClamdClient::Error::SocketNotFound:
-        return ClamdClient::tr("Socket clamd introuvable : %1\n"
-                               "Vérifiez que le service clamd est installé et démarré,\n"
-                               "et que le chemin du socket est correct.")
-            .arg(socketPath);
-    case ClamdClient::Error::ConnectionRefused:
-        return ClamdClient::tr("clamd ne répond pas sur %1 : le service semble arrêté.")
-            .arg(socketPath);
-    case ClamdClient::Error::PermissionDenied: {
-        const QString group = socketGroup(socketPath);
-        QString user = qEnvironmentVariable("USER");
-        if (user.isEmpty())
-            user = QStringLiteral("$USER");
-        return ClamdClient::tr("Permission refusée sur le socket clamd : %1\n"
-                               "Ajoutez votre utilisateur au groupe « %2 » :\n"
-                               "    sudo usermod -aG %2 %3\n"
-                               "puis fermez et rouvrez votre session.")
-            .arg(socketPath, group, user);
-    }
-    case ClamdClient::Error::Timeout:
-        return ClamdClient::tr("clamd n'a pas répondu à temps (%1).").arg(socketPath);
-    case ClamdClient::Error::ProtocolError:
-        return ClamdClient::tr("Réponse inattendue de clamd : %1").arg(detail);
-    case ClamdClient::Error::SocketError:
-        return ClamdClient::tr("Erreur de communication avec clamd (%1) : %2").arg(socketPath, detail);
-    }
-    return {};
-}
-
 } // namespace
 
 ClamdVersion ClamdVersion::fromReply(const QByteArray &reply)
@@ -114,6 +80,56 @@ ClamdVersion ClamdVersion::fromReply(const QByteArray &reply)
         version.signaturesDate = QLocale::c().toDateTime(date, QStringLiteral("ddd MMM d HH:mm:ss yyyy"));
     }
     return version;
+}
+
+QString ClamdClient::errorMessage(Error error, const QString &socketPath, const QString &detail)
+{
+    switch (error) {
+    case Error::NoError:
+        return {};
+    case Error::SocketNotFound:
+        return tr("Socket clamd introuvable : %1\n"
+                  "Vérifiez que le service clamd est installé et démarré,\n"
+                  "et que le chemin du socket est correct.")
+            .arg(socketPath);
+    case Error::ConnectionRefused:
+        return tr("clamd ne répond pas sur %1 : le service semble arrêté.")
+            .arg(socketPath);
+    case Error::PermissionDenied: {
+        const QString group = socketGroup(socketPath);
+        QString user = qEnvironmentVariable("USER");
+        if (user.isEmpty())
+            user = QStringLiteral("$USER");
+        return tr("Permission refusée sur le socket clamd : %1\n"
+                  "Ajoutez votre utilisateur au groupe « %2 » :\n"
+                  "    sudo usermod -aG %2 %3\n"
+                  "puis fermez et rouvrez votre session.")
+            .arg(socketPath, group, user);
+    }
+    case Error::Timeout:
+        return tr("clamd n'a pas répondu à temps (%1).").arg(socketPath);
+    case Error::ProtocolError:
+        return tr("Réponse inattendue de clamd : %1").arg(detail);
+    case Error::SocketError:
+        return tr("Erreur de communication avec clamd (%1) : %2").arg(socketPath, detail);
+    }
+    return {};
+}
+
+ClamdClient::Error ClamdClient::errorFromSocket(QLocalSocket::LocalSocketError error)
+{
+    switch (error) {
+    case QLocalSocket::ServerNotFoundError:
+        return Error::SocketNotFound;
+    case QLocalSocket::ConnectionRefusedError:
+        return Error::ConnectionRefused;
+    case QLocalSocket::SocketAccessError:
+        return Error::PermissionDenied;
+    case QLocalSocket::SocketTimeoutError:
+        return Error::Timeout;
+    default:
+        return Error::SocketError;
+    }
 }
 
 ClamdClient::ClamdClient(QObject *parent)
@@ -234,26 +250,10 @@ void ClamdClient::sendCommand(const QByteArray &command, ReplyHandler onReply)
     connect(socket, &QLocalSocket::disconnected, socket, onClosed);
     connect(socket, &QLocalSocket::errorOccurred, socket,
             [socket, finish, onClosed](QLocalSocket::LocalSocketError error) {
-                switch (error) {
-                case QLocalSocket::ServerNotFoundError:
-                    finish(Error::SocketNotFound, {});
-                    break;
-                case QLocalSocket::ConnectionRefusedError:
-                    finish(Error::ConnectionRefused, {});
-                    break;
-                case QLocalSocket::SocketAccessError:
-                    finish(Error::PermissionDenied, {});
-                    break;
-                case QLocalSocket::SocketTimeoutError:
-                    finish(Error::Timeout, {});
-                    break;
-                case QLocalSocket::PeerClosedError:
+                if (error == QLocalSocket::PeerClosedError)
                     onClosed();
-                    break;
-                default:
-                    finish(Error::SocketError, socket->errorString());
-                    break;
-                }
+                else
+                    finish(errorFromSocket(error), socket->errorString());
             });
     connect(timer, &QTimer::timeout, socket, [finish] {
         finish(Error::Timeout, {});
@@ -270,5 +270,5 @@ void ClamdClient::sendCommand(const QByteArray &command, ReplyHandler onReply)
 
 void ClamdClient::emitError(Error error, const QString &socketPath, const QString &detail)
 {
-    emit errorOccurred(error, describeError(error, socketPath, detail));
+    emit errorOccurred(error, errorMessage(error, socketPath, detail));
 }

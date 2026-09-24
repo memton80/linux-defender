@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Placeholder : menace détectée (bouclier + croix). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <path d="M32 4 L54 12 V30 C54 44 44 54 32 60 C20 54 10 44 10 30 V12 Z" fill="#da4453"/>
+  <path d="M24 23 L40 39 M40 23 L24 39" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+</svg>

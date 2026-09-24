@@ -1,8 +1,11 @@
 #include "MainWindow.h"
 
+#include "ScanPanel.h"
+#include "SettingsDialog.h"
 #include "StatusDisplay.h"
 #include "core/ClamdWatcher.h"
 
+#include <QEvent>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -12,9 +15,10 @@
 #include <QStyle>
 #include <QVBoxLayout>
 
-MainWindow::MainWindow(ClamdWatcher *watcher, QWidget *parent)
+MainWindow::MainWindow(ClamdWatcher *watcher, ScanManager *scans, QWidget *parent)
     : QMainWindow(parent)
     , m_watcher(watcher)
+    , m_scanPanel(new ScanPanel(scans))
 {
     // En-tête : icône d'état, titre et détails (version ou message d'erreur).
     m_icon = new QLabel;
@@ -41,12 +45,12 @@ MainWindow::MainWindow(ClamdWatcher *watcher, QWidget *parent)
     header->addLayout(texts, 1);
 
     // Informations techniques.
-    auto *socket = new QLabel(m_watcher->socketPath());
-    socket->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_socket = new QLabel;
+    m_socket->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_lastCheck = new QLabel;
 
     auto *info = new QFormLayout;
-    info->addRow(tr("Socket :"), socket);
+    info->addRow(tr("Socket :"), m_socket);
     info->addRow(tr("Dernière vérification :"), m_lastCheck);
 
     m_checkButton = new QPushButton(QIcon::fromTheme(QStringLiteral("view-refresh")), tr("Vérifier maintenant"));
@@ -65,10 +69,17 @@ MainWindow::MainWindow(ClamdWatcher *watcher, QWidget *parent)
     statusLayout->addLayout(info);
     statusLayout->addLayout(buttons);
 
+    auto *settingsButton = new QPushButton(QIcon::fromTheme(QStringLiteral("configure")), tr("Paramètres…"));
+    connect(settingsButton, &QPushButton::clicked, this, &MainWindow::openSettings);
+    auto *bottom = new QHBoxLayout;
+    bottom->addStretch();
+    bottom->addWidget(settingsButton);
+
     auto *central = new QWidget;
     auto *layout = new QVBoxLayout(central);
     layout->addWidget(statusBox);
-    layout->addStretch(); // les prochaines sections (scan...) viendront ici
+    layout->addWidget(m_scanPanel, 1);
+    layout->addLayout(bottom);
     setCentralWidget(central);
 
     connect(m_watcher, &ClamdWatcher::statusChanged, this, &MainWindow::updateStatus);
@@ -78,7 +89,7 @@ MainWindow::MainWindow(ClamdWatcher *watcher, QWidget *parent)
 
     // Taille initiale seulement. Pas de setMinimumWidth() : il empêcherait la
     // fenêtre de s'élargir d'elle-même pour afficher un long message d'erreur.
-    resize(sizeHint().expandedTo(QSize(560, 0)));
+    resize(sizeHint().expandedTo(QSize(760, 640)));
 }
 
 void MainWindow::showAndActivate()
@@ -97,10 +108,31 @@ void MainWindow::toggleVisibility()
         showAndActivate();
 }
 
+void MainWindow::chooseFolderToScan()
+{
+    showAndActivate();
+    m_scanPanel->chooseFolder();
+}
+
 void MainWindow::showEvent(QShowEvent *event)
 {
     QMainWindow::showEvent(event);
     m_watcher->checkNow(); // état à jour dès que la fenêtre apparaît
+    emit windowActivated();
+}
+
+void MainWindow::changeEvent(QEvent *event)
+{
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::ActivationChange && isActiveWindow())
+        emit windowActivated();
+}
+
+void MainWindow::openSettings()
+{
+    SettingsDialog dialog(this);
+    if (dialog.exec() == QDialog::Accepted)
+        emit settingsChanged();
 }
 
 void MainWindow::updateStatus()
@@ -118,6 +150,7 @@ void MainWindow::updateStatus()
 
 void MainWindow::updateLastCheck()
 {
+    m_socket->setText(m_watcher->socketPath());
     const QDateTime lastCheck = m_watcher->lastCheck();
     m_lastCheck->setText(lastCheck.isValid() ? QLocale().toString(lastCheck.time(), QLocale::LongFormat)
                                              : tr("en cours…"));

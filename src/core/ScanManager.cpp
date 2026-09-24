@@ -1,0 +1,72 @@
+#include "ScanManager.h"
+
+#include "ClamdClient.h"
+
+ScanManager::ScanManager(ClamdClient *client, QObject *parent)
+    : QObject(parent)
+    , m_client(client)
+{
+}
+
+void ScanManager::scan(const QStringList &paths, Origin origin)
+{
+    if (paths.isEmpty())
+        return;
+    // Même demande déjà en cours ou en attente (clé montée deux fois...) : ignorée.
+    if (m_job && m_job->paths() == paths)
+        return;
+    for (const Request &request : std::as_const(m_queue)) {
+        if (request.paths == paths)
+            return;
+    }
+
+    m_queue.append({paths, origin});
+    startNext();
+}
+
+void ScanManager::cancelAll()
+{
+    m_queue.clear();
+    if (m_job)
+        m_job->cancel(); // finished() arrivera avec `cancelled` à true
+}
+
+bool ScanManager::isScanning() const
+{
+    return m_job != nullptr;
+}
+
+QStringList ScanManager::currentPaths() const
+{
+    return m_job ? m_job->paths() : QStringList();
+}
+
+ScanManager::Origin ScanManager::currentOrigin() const
+{
+    return m_origin;
+}
+
+void ScanManager::startNext()
+{
+    if (m_job || m_queue.isEmpty())
+        return;
+
+    const Request request = m_queue.takeFirst();
+    m_origin = request.origin;
+    m_job = new ScanJob(m_client->socketPath(), request.paths, this);
+
+    // Le ScanJob émet depuis son thread : ces connexions passent par la file
+    // d'événements et les signaux arrivent dans le thread de l'interface.
+    connect(m_job, &ScanJob::counting, this, &ScanManager::counting);
+    connect(m_job, &ScanJob::progressChanged, this, &ScanManager::progressChanged);
+    connect(m_job, &ScanJob::resultsReady, this, &ScanManager::resultsReady);
+    connect(m_job, &ScanJob::finished, this, [this](const ScanSummary &summary) {
+        m_job->deleteLater();
+        m_job = nullptr;
+        emit scanFinished(summary, m_origin);
+        startNext();
+    });
+
+    emit scanStarted(request.paths, request.origin);
+    m_job->start();
+}

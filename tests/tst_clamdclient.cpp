@@ -53,7 +53,7 @@ void TestClamdClient::pingSucceeds()
 
     QVERIFY(pong.wait(2000));
     QCOMPARE(error.count(), 0);
-    QCOMPARE(clamd.received, QByteArrayLiteral("zPING\0"));
+    QCOMPARE(clamd.received(), QByteArrayLiteral("zPING\0"));
 }
 
 void TestClamdClient::pingSocketNotFound()
@@ -117,7 +117,7 @@ void TestClamdClient::versionSucceeds()
     client.version();
 
     QVERIFY(spy.wait(2000));
-    QCOMPARE(clamd.received, QByteArrayLiteral("zVERSION\0"));
+    QCOMPARE(clamd.received(), QByteArrayLiteral("zVERSION\0"));
     const auto version = spy.first().at(0).value<ClamdVersion>();
     QCOMPARE(version.engine, QStringLiteral("1.4.2"));
     QCOMPARE(version.signatures, QStringLiteral("27400"));

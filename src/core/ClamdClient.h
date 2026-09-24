@@ -2,6 +2,7 @@
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QLocalSocket>
 #include <QObject>
 #include <QString>
 
@@ -74,6 +75,11 @@ public:
 
     // Envoie VERSION. Résultat : versionReceived(), sinon errorOccurred().
     void version();
+
+    // Message lisible par l'utilisateur pour une erreur (utilisé aussi par ScanJob).
+    static QString errorMessage(Error error, const QString &socketPath, const QString &detail = {});
+    // Traduit une erreur de QLocalSocket en erreur ClamdClient.
+    static Error errorFromSocket(QLocalSocket::LocalSocketError error);
 
 signals:
     void pong();

@@ -1,5 +1,9 @@
 #include "core/ClamdClient.h"
 #include "core/ClamdWatcher.h"
+#include "core/ScanManager.h"
+#include "core/Settings.h"
+#include "system/SingleInstance.h"
+#include "system/UsbMonitor.h"
 #include "ui/MainWindow.h"
 #include "ui/TrayIcon.h"
 
@@ -10,6 +14,7 @@
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    QApplication::setOrganizationName(QStringLiteral("linux-defender")); // dossier des réglages
     QApplication::setApplicationName(QStringLiteral("linux-defender"));
     QApplication::setApplicationDisplayName(QStringLiteral("Linux Defender"));
     QApplication::setApplicationVersion(QStringLiteral(DEFENDER_VERSION));
@@ -22,7 +27,7 @@ int main(int argc, char *argv[])
     parser.addHelpOption();
     parser.addVersionOption();
     const QCommandLineOption socketOption({QStringLiteral("s"), QStringLiteral("socket")},
-                                          QCoreApplication::translate("main", "Chemin du socket clamd (détecté automatiquement par défaut)."),
+                                          QCoreApplication::translate("main", "Chemin du socket clamd (sinon : réglages, puis détection automatique)."),
                                           QCoreApplication::translate("main", "chemin"));
     const QCommandLineOption backgroundOption(QStringLiteral("background"),
                                               QCoreApplication::translate("main", "Démarre en arrière-plan, sans afficher la fenêtre."));
@@ -30,15 +35,43 @@ int main(int argc, char *argv[])
     parser.addOption(backgroundOption);
     parser.process(app);
 
+    // Déjà lancée ? On lui demande de réafficher sa fenêtre (sauf lancement en
+    // arrière-plan, typiquement au démarrage de la session) et on quitte.
+    const bool background = parser.isSet(backgroundOption);
+    SingleInstance instance(QStringLiteral("linux-defender"));
+    if (!instance.tryBecomePrimary(background ? QByteArray() : QByteArrayLiteral("show")))
+        return 0;
+
     ClamdClient client;
-    if (parser.isSet(socketOption))
-        client.setSocketPath(parser.value(socketOption));
+    client.setSocketPath(parser.isSet(socketOption) ? parser.value(socketOption) : Settings::effectiveSocketPath());
 
     ClamdWatcher watcher(&client);
-    MainWindow window(&watcher);
-    TrayIcon tray(&watcher);
+    ScanManager scans(&client);
+    UsbMonitor usb;
+    MainWindow window(&watcher, &scans);
+    TrayIcon tray(&watcher, &scans);
+
+    QObject::connect(&instance, &SingleInstance::messageReceived, &window, [&window](const QByteArray &message) {
+        if (message == "show")
+            window.showAndActivate();
+    });
     QObject::connect(&tray, &TrayIcon::showWindowRequested, &window, &MainWindow::showAndActivate);
     QObject::connect(&tray, &TrayIcon::toggleWindowRequested, &window, &MainWindow::toggleVisibility);
+    QObject::connect(&tray, &TrayIcon::scanFolderRequested, &window, &MainWindow::chooseFolderToScan);
+    QObject::connect(&window, &MainWindow::windowActivated, &tray, &TrayIcon::acknowledgeThreats);
+    // Résultats déjà sous les yeux de l'utilisateur : pas besoin de l'alerter via l'icône.
+    QObject::connect(&scans, &ScanManager::scanFinished, &tray, [&window, &tray] {
+        if (window.isActiveWindow())
+            tray.acknowledgeThreats();
+    });
+    QObject::connect(&window, &MainWindow::settingsChanged, &watcher, [&client, &watcher] {
+        client.setSocketPath(Settings::effectiveSocketPath());
+        watcher.checkNow();
+    });
+    QObject::connect(&usb, &UsbMonitor::removableMounted, &scans, [&scans](const QString &mountPoint) {
+        if (Settings::usbAutoScan())
+            scans.scan({mountPoint}, ScanManager::Origin::Usb);
+    });
 
     // Avec une zone de notification, fermer la fenêtre la masque seulement et
     // l'application continue en arrière-plan. Sans zone de notification (rare
@@ -49,7 +82,7 @@ int main(int argc, char *argv[])
         QApplication::setQuitOnLastWindowClosed(false);
         tray.show();
     }
-    if (!hasTray || !parser.isSet(backgroundOption))
+    if (!hasTray || !background)
         window.show();
 
     watcher.start();

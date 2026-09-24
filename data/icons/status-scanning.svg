@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Placeholder : scan en cours (bouclier + loupe). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <path d="M32 4 L54 12 V30 C54 44 44 54 32 60 C20 54 10 44 10 30 V12 Z" fill="#3daee9"/>
+  <circle cx="29" cy="28" r="8" fill="none" stroke="#ffffff" stroke-width="5"/>
+  <path d="M35 34 L42 41" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+</svg>
