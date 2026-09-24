@@ -1,10 +1,30 @@
 #pragma once
 
 #include <QByteArray>
+#include <QDateTime>
 #include <QObject>
 #include <QString>
 
 #include <functional>
+
+// Réponse à la commande VERSION, par exemple :
+//   "ClamAV 1.4.2/27400/Tue Sep 23 08:26:12 2026"
+// c'est-à-dire : version du moteur / version des signatures / date des signatures.
+struct ClamdVersion
+{
+    QString engine;             // "1.4.2"
+    QString signatures;         // "27400" (vide si clamd n'a chargé aucune base)
+    QDateTime signaturesDate;   // invalide si absente ou illisible
+
+    // Renvoie une version vide (engine vide) si la réponse n'est pas reconnue.
+    static ClamdVersion fromReply(const QByteArray &reply);
+
+    bool operator==(const ClamdVersion &other) const
+    {
+        return engine == other.engine && signatures == other.signatures && signaturesDate == other.signaturesDate;
+    }
+    bool operator!=(const ClamdVersion &other) const { return !(*this == other); }
+};
 
 /**
  * Client du démon clamd, via son socket Unix local.
@@ -52,8 +72,12 @@ public:
     // Envoie PING. Résultat : pong() si clamd répond, sinon errorOccurred().
     void ping();
 
+    // Envoie VERSION. Résultat : versionReceived(), sinon errorOccurred().
+    void version();
+
 signals:
     void pong();
+    void versionReceived(const ClamdVersion &version);
     // `message` est prêt à être affiché à l'utilisateur.
     void errorOccurred(ClamdClient::Error error, const QString &message);
 

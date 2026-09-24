@@ -5,8 +5,9 @@ pensée pour KDE Plasma (thème Breeze clair/sombre automatique).
 Écrite en C++ / Qt 6 (QtWidgets). Elle communique directement avec le démon `clamd`
 par son socket Unix, avec le protocole natif de clamd.
 
-> **État : étape 1.** Seule la communication avec clamd existe pour l'instant.
-> Le binaire envoie `PING` à clamd et affiche le résultat. L'interface graphique arrive à l'étape 2.
+> **État : étape 2.** L'application tourne en arrière-plan avec une icône dans la zone de
+> notification. Elle affiche l'état de clamd (connecté, ou inaccessible avec la raison).
+> Le scan arrive à l'étape 3.
 
 ## Arborescence
 
@@ -15,14 +16,22 @@ linux-defender/
 ├── CMakeLists.txt            # projet, options, dépendances Qt
 ├── src/
 │   ├── CMakeLists.txt        # cibles : defender_core (bibliothèque) + linux-defender (exécutable)
-│   ├── main.cpp              # point d'entrée
+│   ├── main.cpp              # point d'entrée : relie le cœur et l'UI
 │   ├── core/                 # logique métier : QtCore + QtNetwork, aucune dépendance à l'UI
-│   │   └── ClamdClient.*     # communication avec clamd (socket Unix, protocole natif)
+│   │   ├── ClamdClient.*     # communication avec clamd (socket Unix, protocole natif)
+│   │   └── ClamdWatcher.*    # vérification périodique de l'état de clamd
 │   ├── system/               # (à venir) intégration système : clés USB via UDisks2/D-Bus
-│   └── ui/                   # (à venir) fenêtre principale, icône de notification
-├── data/                     # (à venir) icônes SVG, fichier .desktop
+│   └── ui/                   # interface QtWidgets
+│       ├── MainWindow.*      # fenêtre principale
+│       ├── TrayIcon.*        # icône et menu de la zone de notification
+│       └── StatusDisplay.*   # icône et textes de l'état de clamd (partagés)
+├── data/
+│   ├── icons/*.svg           # icônes SVG (placeholders à remplacer)
+│   └── linux-defender.desktop
 ├── tests/
-│   └── tst_clamdclient.cpp   # tests avec un faux clamd : pas besoin de clamd pour les lancer
+│   ├── FakeClamd.h           # faux clamd : pas besoin de clamd pour lancer les tests
+│   ├── tst_clamdclient.cpp
+│   └── tst_clamdwatcher.cpp
 └── .github/workflows/        # (à venir) CI : binaire, .deb, .rpm
 ```
 
@@ -34,6 +43,9 @@ linux-defender/
 # Compilation
 sudo dnf install cmake gcc-c++ ninja-build qt6-qtbase-devel
 
+# Affichage des icônes SVG (déjà présent sur Fedora KDE)
+sudo dnf install qt6-qtsvg
+
 # ClamAV
 sudo dnf install clamav clamd clamav-update
 ```
@@ -43,6 +55,9 @@ sudo dnf install clamav clamd clamav-update
 ```sh
 # Compilation
 sudo apt install build-essential cmake ninja-build qt6-base-dev
+
+# Affichage des icônes SVG
+sudo apt install libqt6svg6
 
 # ClamAV
 sudo apt install clamav-daemon clamav-freshclam
@@ -59,6 +74,12 @@ ctest --test-dir build --output-on-failure   # tests unitaires
 Le binaire se trouve dans `build/bin/linux-defender`.
 
 Option CMake disponible : `-DDEFENDER_BUILD_TESTS=OFF` pour ne pas compiler les tests.
+
+Installation (binaire, fichier `.desktop` et icône) :
+
+```sh
+sudo cmake --install build --prefix /usr/local
+```
 
 ## Configurer clamd
 
@@ -102,12 +123,21 @@ sudo usermod -aG <groupe> $USER
 
 Fermez ensuite votre session et rouvrez-la pour que le changement prenne effet.
 
-## Utilisation (étape 1)
+## Utilisation
 
 ```sh
-./build/bin/linux-defender                           # socket détecté automatiquement
+./build/bin/linux-defender                           # ouvre la fenêtre, socket détecté automatiquement
+./build/bin/linux-defender --background              # démarre directement dans la zone de notification
 ./build/bin/linux-defender --socket /chemin/clamd.sock
 ```
+
+Fermer la fenêtre ne quitte pas l'application : elle reste active dans la zone de notification.
+- Clic gauche sur l'icône : afficher ou masquer la fenêtre.
+- Clic droit : état de clamd, « Vérifier l'état de clamd », « Ouvrir la fenêtre », « Quitter ».
+
+L'état de clamd est vérifié toutes les 30 secondes, à l'ouverture de la fenêtre et sur demande.
+La vérification utilise la commande `VERSION` de clamd, qui donne aussi la version du moteur
+et la date des signatures.
 
 Le socket est détecté ainsi :
 1. la directive `LocalSocket` de `/etc/clamd.d/scan.conf`, `/etc/clamav/clamd.conf` ou `/etc/clamd.conf` ;
@@ -116,7 +146,7 @@ Le socket est détecté ainsi :
 ## Feuille de route
 
 - [x] Étape 1 : `ClamdClient`, connexion au socket et `PING`
-- [ ] Étape 2 : icône dans la zone de notification, fenêtre principale, statut de clamd
+- [x] Étape 2 : icône dans la zone de notification, fenêtre principale, statut de clamd
 - [ ] Étape 3 : scan à la demande d'un fichier ou d'un dossier
 - [ ] Étape 4 : scan automatique des clés USB branchées (UDisks2)
 - [ ] Étape 5 : CI GitHub Actions (binaire, `.deb`, `.rpm`)

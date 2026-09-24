@@ -1,44 +1,57 @@
 #include "core/ClamdClient.h"
+#include "core/ClamdWatcher.h"
+#include "ui/MainWindow.h"
+#include "ui/TrayIcon.h"
 
+#include <QApplication>
 #include <QCommandLineParser>
-#include <QCoreApplication>
-#include <QTextStream>
+#include <QIcon>
 
-// Étape 1 : test de communication avec clamd (PING) en ligne de commande.
-// Ce point d'entrée deviendra l'application graphique (QApplication + icône
-// dans la zone de notification) à l'étape 2.
 int main(int argc, char *argv[])
 {
-    QCoreApplication app(argc, argv);
-    QCoreApplication::setApplicationName(QStringLiteral("linux-defender"));
-    QCoreApplication::setApplicationVersion(QStringLiteral(DEFENDER_VERSION));
+    QApplication app(argc, argv);
+    QApplication::setApplicationName(QStringLiteral("linux-defender"));
+    QApplication::setApplicationDisplayName(QStringLiteral("Linux Defender"));
+    QApplication::setApplicationVersion(QStringLiteral(DEFENDER_VERSION));
+    // Relie les fenêtres au fichier linux-defender.desktop (icône dans la barre des tâches sous Wayland).
+    QApplication::setDesktopFileName(QStringLiteral("linux-defender"));
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/linux-defender.svg")));
 
     QCommandLineParser parser;
-    parser.setApplicationDescription(QCoreApplication::translate("main", "Vérifie la communication avec clamd (PING)."));
+    parser.setApplicationDescription(QCoreApplication::translate("main", "Interface légère pour l'antivirus ClamAV."));
     parser.addHelpOption();
     parser.addVersionOption();
     const QCommandLineOption socketOption({QStringLiteral("s"), QStringLiteral("socket")},
                                           QCoreApplication::translate("main", "Chemin du socket clamd (détecté automatiquement par défaut)."),
                                           QCoreApplication::translate("main", "chemin"));
+    const QCommandLineOption backgroundOption(QStringLiteral("background"),
+                                              QCoreApplication::translate("main", "Démarre en arrière-plan, sans afficher la fenêtre."));
     parser.addOption(socketOption);
+    parser.addOption(backgroundOption);
     parser.process(app);
 
     ClamdClient client;
     if (parser.isSet(socketOption))
         client.setSocketPath(parser.value(socketOption));
 
-    QTextStream out(stdout);
-    QTextStream err(stderr);
+    ClamdWatcher watcher(&client);
+    MainWindow window(&watcher);
+    TrayIcon tray(&watcher);
+    QObject::connect(&tray, &TrayIcon::showWindowRequested, &window, &MainWindow::showAndActivate);
+    QObject::connect(&tray, &TrayIcon::toggleWindowRequested, &window, &MainWindow::toggleVisibility);
 
-    QObject::connect(&client, &ClamdClient::pong, &app, [&] {
-        out << "clamd OK (PONG) via " << client.socketPath() << Qt::endl;
-        app.exit(0);
-    });
-    QObject::connect(&client, &ClamdClient::errorOccurred, &app, [&](ClamdClient::Error, const QString &message) {
-        err << message << Qt::endl;
-        app.exit(1);
-    });
+    // Avec une zone de notification, fermer la fenêtre la masque seulement et
+    // l'application continue en arrière-plan. Sans zone de notification (rare
+    // sous Plasma), il n'y aurait plus aucun moyen d'y revenir : fermer la
+    // fenêtre quitte alors l'application, et elle est toujours affichée.
+    const bool hasTray = QSystemTrayIcon::isSystemTrayAvailable();
+    if (hasTray) {
+        QApplication::setQuitOnLastWindowClosed(false);
+        tray.show();
+    }
+    if (!hasTray || !parser.isSet(backgroundOption))
+        window.show();
 
-    client.ping();
+    watcher.start();
     return app.exec();
 }

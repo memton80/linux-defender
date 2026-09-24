@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Linux Defender
+GenericName=Antivirus
+Comment=Lightweight interface for the ClamAV antivirus
+Comment[fr]=Interface légère pour l'antivirus ClamAV
+Exec=linux-defender
+Icon=linux-defender
+Terminal=false
+Categories=Qt;System;Security;
+Keywords=antivirus;clamav;virus;malware;scan;

@@ -1,8 +1,7 @@
 find_package(Qt6 REQUIRED COMPONENTS Test)
 
-qt_add_executable(tst_clamdclient
-    tst_clamdclient.cpp
-)
-target_link_libraries(tst_clamdclient PRIVATE defender_core Qt6::Test)
-
-add_test(NAME tst_clamdclient COMMAND tst_clamdclient)
+foreach(test tst_clamdclient tst_clamdwatcher)
+    qt_add_executable(${test} ${test}.cpp FakeClamd.h)
+    target_link_libraries(${test} PRIVATE defender_core Qt6::Test)
+    add_test(NAME ${test} COMMAND ${test})
+endforeach()

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Placeholder : icône de l'application (bouclier). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <path d="M32 4 L54 12 V30 C54 44 44 54 32 60 C20 54 10 44 10 30 V12 Z" fill="#3daee9"/>
+  <path d="M32 13 L46 18 V30 C46 39 40 46 32 50 C24 46 18 39 18 30 V18 Z" fill="none" stroke="#ffffff" stroke-width="4" stroke-linejoin="round"/>
+</svg>

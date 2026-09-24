@@ -23,8 +23,8 @@ option(DEFENDER_BUILD_TESTS "Compiler les tests unitaires" ON)
 
 # Qt 6.4 minimum : c'est la version d'Ubuntu 24.04 (cible du futur .deb).
 # Fedora 44 fournit une version plus récente, compatible.
-# Étape 2 (UI) : ajouter Widgets ; étape 4 (clé USB) : ajouter DBus.
-find_package(Qt6 6.4 REQUIRED COMPONENTS Core Network)
+# Étape 4 (clé USB) : ajouter DBus.
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Network Widgets)
 qt_standard_project_setup()  # active AUTOMOC et charge GNUInstallDirs
 
 add_compile_options(-Wall -Wextra -Wpedantic)

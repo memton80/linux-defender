@@ -2,6 +2,7 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QLocale>
 #include <QLocalSocket>
 #include <QRegularExpression>
 #include <QTimer>
@@ -66,7 +67,7 @@ QString describeError(ClamdClient::Error error, const QString &socketPath, const
         return {};
     case ClamdClient::Error::SocketNotFound:
         return ClamdClient::tr("Socket clamd introuvable : %1\n"
-                               "Vérifiez que le service clamd est installé et démarré, "
+                               "Vérifiez que le service clamd est installé et démarré,\n"
                                "et que le chemin du socket est correct.")
             .arg(socketPath);
     case ClamdClient::Error::ConnectionRefused:
@@ -94,6 +95,26 @@ QString describeError(ClamdClient::Error error, const QString &socketPath, const
 }
 
 } // namespace
+
+ClamdVersion ClamdVersion::fromReply(const QByteArray &reply)
+{
+    ClamdVersion version;
+    const QList<QByteArray> parts = reply.trimmed().split('/');
+    const QByteArray prefix = QByteArrayLiteral("ClamAV ");
+    if (!parts.first().startsWith(prefix))
+        return version;
+
+    version.engine = QString::fromUtf8(parts.first().mid(prefix.size())).trimmed();
+    if (parts.size() > 1)
+        version.signatures = QString::fromUtf8(parts.at(1)).trimmed();
+    if (parts.size() > 2) {
+        // Date au format de ctime(), en anglais : "Tue Sep  3 08:26:12 2026"
+        // (le jour est complété par une espace, que simplified() supprime).
+        const QString date = QString::fromUtf8(parts.at(2)).simplified();
+        version.signaturesDate = QLocale::c().toDateTime(date, QStringLiteral("ddd MMM d HH:mm:ss yyyy"));
+    }
+    return version;
+}
 
 ClamdClient::ClamdClient(QObject *parent)
     : QObject(parent)
@@ -148,6 +169,18 @@ void ClamdClient::ping()
             emit pong();
         else
             emitError(Error::ProtocolError, path, QString::fromUtf8(reply));
+    });
+}
+
+void ClamdClient::version()
+{
+    const QString path = m_socketPath;
+    sendCommand(QByteArrayLiteral("VERSION"), [this, path](const QByteArray &reply) {
+        const ClamdVersion parsed = ClamdVersion::fromReply(reply);
+        if (parsed.engine.isEmpty())
+            emitError(Error::ProtocolError, path, QString::fromUtf8(reply));
+        else
+            emit versionReceived(parsed);
     });
 }
 
