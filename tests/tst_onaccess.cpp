@@ -542,6 +542,8 @@ void TestOnAccess::generatedFilesMatchCode()
     // clamonacc quitte avec le code 0 même sur une erreur fatale : seul
     // Restart=always le relance (et fait apparaître « auto-restart »).
     QVERIFY(service.contains(QLatin1String("\nRestart=always\n")));
+    // clamonacc ignore SIGHUP : un ExecReload qui l'envoie ne servirait à rien.
+    QVERIFY(!service.contains(QLatin1String("\nExecReload=")));
 
     // Configuration de clamonacc : dossiers surveillés lus par l'application.
     const QString configFile = dir + QStringLiteral("/clamonacc.conf");
@@ -554,14 +556,16 @@ void TestOnAccess::generatedFilesMatchCode()
     // Fichiers analysés aussi à l'écriture, pas seulement à l'ouverture.
     QVERIFY(confText.contains(QLatin1String("\nOnAccessExtraScanning yes\n")));
 
-    // Rotation : même journal, même service.
+    // Rotation : même journal, vidé en place. clamonacc ne rouvre jamais son
+    // journal : renommé (« create »), il continuerait d'écrire dans l'ancien.
     QFile rotate(dir + QStringLiteral("/linux-defender.logrotate"));
     QVERIFY(rotate.open(QIODevice::ReadOnly | QIODevice::Text));
     const QString rotateText = QString::fromUtf8(rotate.readAll());
     QVERIFY(!rotateText.contains(QLatin1String("@DEFENDER")));
     QVERIFY(rotateText.startsWith(QLatin1String("#")) && rotateText.contains(log + QStringLiteral(" {")));
-    QVERIFY(rotateText.contains(QLatin1String("create 0644 root root")));
-    QVERIFY(rotateText.contains(kService));
+    QVERIFY(rotateText.contains(QLatin1String("\n    copytruncate\n")));
+    QVERIFY(!rotateText.contains(QLatin1String("\n    create")));
+    QVERIFY(!rotateText.contains(QLatin1String("postrotate")));
 }
 
 // --- État lu depuis systemd --------------------------------------------------

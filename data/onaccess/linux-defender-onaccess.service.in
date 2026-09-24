@@ -18,8 +18,8 @@ LogsDirectory=linux-defender
 ExecStartPre=/usr/bin/touch @DEFENDER_ONACCESS_LOG@
 ExecStartPre=/usr/bin/chmod 0644 @DEFENDER_ONACCESS_LOG@
 ExecStart=@DEFENDER_CLAMONACC@ --foreground --fdpass --wait --config-file=@DEFENDER_ONACCESS_CONFIG@ --log=@DEFENDER_ONACCESS_LOG@
-# SIGHUP : clamonacc rouvre son journal (après une rotation).
-ExecReload=/bin/kill -HUP $MAINPID
+# Pas d'ExecReload : clamonacc ignore SIGHUP et ne sait pas relire sa
+# configuration ni rouvrir son journal (voir la rotation, en copytruncate).
 # always, pas on-failure : clamonacc quitte avec le code 0 même sur une erreur
 # fatale (limite inotify atteinte, plantage), comme lors d'un arrêt demandé.
 # Seul systemd sait si l'arrêt a été demandé : il ne relance alors pas.

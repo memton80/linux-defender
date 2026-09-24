@@ -296,6 +296,11 @@ il est lisible par tous les utilisateurs de la machine.
 `clamonacc` n'horodate pas son journal : les détections antérieures au lancement de l'application
 apparaissent avec la mention « Avant le lancement ».
 
+Le journal est archivé chaque mois (6 archives compressées, `clamonacc.log.1.gz`...). `clamonacc`
+ne rouvre jamais son journal (il ignore SIGHUP) : la rotation copie donc le fichier puis le vide
+en place (`copytruncate`), et `clamonacc` continue d'y écrire. Les quelques lignes écrites
+pendant la copie peuvent manquer à l'archive.
+
 ### Limitations connues
 
 - **Détection seulement** : l'accès aux fichiers n'est pas bloqué (`OnAccessPrevention no`), et

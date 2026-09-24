@@ -5,9 +5,11 @@
     compress
     missingok
     notifempty
-    # Nouveau fichier lisible par l'application (ClamAV le créerait en 0640).
-    create 0644 root root
-    postrotate
-        systemctl kill --signal=HUP @DEFENDER_ONACCESS_SERVICE@ >/dev/null 2>&1 || true
-    endscript
+    # Copie puis vidage du fichier en place, plutôt que renommage et nouveau
+    # fichier : clamonacc ignore SIGHUP et ne rouvre jamais son journal, il
+    # écrirait sinon dans l'ancien fichier (compressé puis supprimé), et les
+    # détections seraient perdues. Il l'a ouvert en ajout (O_APPEND) : après
+    # le vidage, il écrit au début. Le fichier garde ses droits (0644,
+    # lisible par l'application).
+    copytruncate
 }

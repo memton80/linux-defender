@@ -4,6 +4,24 @@ Les versions publiées correspondent aux tags `vX.Y.Z` (voir les
 [releases](https://github.com/memton80/linux-defender/releases)). Les paquets construits hors tag
 portent la version `0.0.0~dev`.
 
+## [1.0.1] — 2026-09-24
+
+### Corrigé
+
+- **Protection en temps réel : plus aucune détection affichée après la rotation mensuelle du
+  journal.** La rotation renommait le journal, créait un fichier vide, puis envoyait SIGHUP à
+  `clamonacc` pour qu'il le rouvre. Or `clamonacc` ignore SIGHUP et ne rouvre jamais son
+  journal : il continuait d'écrire dans l'ancien fichier, aussitôt compressé puis supprimé. Les
+  détections étaient donc perdues, jusqu'au redémarrage du service. La rotation copie maintenant
+  le journal puis le vide en place (`copytruncate`), et `clamonacc` continue d'y écrire.
+- Le service n'a plus d'`ExecReload`, qui envoyait ce SIGHUP sans effet.
+
+La mise à jour du paquet redémarre le service s'il tournait : sur un système déjà touché, les
+nouvelles détections s'affichent de nouveau sans autre manipulation (celles écrites dans le
+fichier supprimé sont perdues). Si vous avez modifié `/etc/logrotate.d/linux-defender`, la
+nouvelle version est installée à côté (`.rpmnew` sous Fedora, question de `dpkg` sous Debian et
+Ubuntu) : reprenez-y `copytruncate`.
+
 ## [1.0.0] — 2026-09-24
 
 Première version publiée.
