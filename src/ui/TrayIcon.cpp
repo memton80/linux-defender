@@ -1,21 +1,18 @@
 #include "TrayIcon.h"
 
+#include "FileActions.h"
 #include "StatusDisplay.h"
 #include "core/ClamdWatcher.h"
+#include "core/Settings.h"
 #include "system/OnAccessController.h"
 
-#include <QCoreApplication>
-#include <QDBusConnection>
-#include <QDBusMessage>
-#include <QDBusPendingCallWatcher>
-#include <QDesktopServices>
+#include <QApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QSet>
 #include <QStandardPaths>
-#include <QUrl>
 
 #include <algorithm>
 
@@ -28,6 +25,7 @@ constexpr int kMaxThreatsInNotification = 3;
 const QString kRealtimeKey = QStringLiteral("realtime");        // détections en temps réel
 const QString kScanKey = QStringLiteral("scan");                // scan de clé USB : début, fin, échec
 const QString kScanThreatsKey = QStringLiteral("scan-threats"); // menaces trouvées par un scan
+const QString kClamdKey = QStringLiteral("clamd");              // clamd ne répond plus, signatures obsolètes
 
 // Nom d'icône du thème (Breeze sous Plasma) ; sinon l'icône de l'application,
 // copiée hors des ressources pour que le serveur de notifications puisse la lire.
@@ -45,22 +43,6 @@ QString notificationIcon(const QString &themeName, const QString &resource)
     }
     return copied.contains(file) ? file : QString();
 }
-
-// Ouvre le gestionnaire de fichiers (Dolphin...) sur le dossier, fichier
-// sélectionné ; à défaut, ouvre simplement le dossier.
-void showInFileManager(const QString &path, const QString &activationToken)
-{
-    QDBusMessage call = QDBusMessage::createMethodCall(
-        QStringLiteral("org.freedesktop.FileManager1"), QStringLiteral("/org/freedesktop/FileManager1"),
-        QStringLiteral("org.freedesktop.FileManager1"), QStringLiteral("ShowItems"));
-    call << QStringList{QUrl::fromLocalFile(path).toString()} << activationToken;
-    auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(call), qApp);
-    QObject::connect(watcher, &QDBusPendingCallWatcher::finished, qApp, [path](QDBusPendingCallWatcher *watcher) {
-        watcher->deleteLater();
-        if (watcher->isError())
-            QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
-    });
-}
 }
 
 TrayIcon::TrayIcon(ClamdWatcher *watcher, ScanManager *scans, OnAccessController *onAccess, QObject *parent)
@@ -70,6 +52,7 @@ TrayIcon::TrayIcon(ClamdWatcher *watcher, ScanManager *scans, OnAccessController
     , m_onAccess(onAccess)
     // Nom affiché et fichier .desktop : Plasma y rattache les notifications.
     , m_notifier(QGuiApplication::applicationDisplayName(), QGuiApplication::desktopFileName())
+    , m_lastClamdState(watcher->state())
 {
     // Premières lignes : l'état de clamd et de la protection en temps réel,
     // pour information (non cliquables).
@@ -83,10 +66,13 @@ TrayIcon::TrayIcon(ClamdWatcher *watcher, ScanManager *scans, OnAccessController
 
     m_menu.addSeparator();
 
-    m_scanFolderAction = m_menu.addAction(QIcon::fromTheme(QStringLiteral("folder-open")), tr("Scanner un dossier…"));
+    m_quickScanAction = m_menu.addAction(QIcon::fromTheme(QStringLiteral("system-search")), tr("Analyse rapide"));
+    connect(m_quickScanAction, &QAction::triggered, this, &TrayIcon::quickScanRequested);
+
+    m_scanFolderAction = m_menu.addAction(QIcon::fromTheme(QStringLiteral("folder-open")), tr("Analyser un dossier…"));
     connect(m_scanFolderAction, &QAction::triggered, this, &TrayIcon::scanFolderRequested);
 
-    m_stopAction = m_menu.addAction(QIcon::fromTheme(QStringLiteral("process-stop")), tr("Arrêter le scan"));
+    m_stopAction = m_menu.addAction(QIcon::fromTheme(QStringLiteral("process-stop")), tr("Arrêter l'analyse"));
     connect(m_stopAction, &QAction::triggered, m_scans, &ScanManager::cancelAll);
 
     m_menu.addSeparator();
@@ -119,7 +105,7 @@ TrayIcon::TrayIcon(ClamdWatcher *watcher, ScanManager *scans, OnAccessController
             emit showWindowRequested();
     });
 
-    connect(m_watcher, &ClamdWatcher::statusChanged, this, &TrayIcon::updateState);
+    connect(m_watcher, &ClamdWatcher::statusChanged, this, &TrayIcon::onClamdStatusChanged);
     connect(m_scans, &ScanManager::scanStarted, this, &TrayIcon::onScanStarted);
     connect(m_scans, &ScanManager::resultsReady, this, &TrayIcon::onResults);
     connect(m_scans, &ScanManager::scanFinished, this, &TrayIcon::onScanFinished);
@@ -145,9 +131,9 @@ void TrayIcon::onScanStarted(const QStringList &paths, ScanManager::Origin origi
     m_scanThreats.clear();
     // Scan automatique : on prévient l'utilisateur, qui ne l'a pas demandé
     // (et ne pourra pas éjecter la clé tant que le scan lit ses fichiers).
-    if (origin == ScanManager::Origin::Usb) {
+    if (origin == ScanManager::Origin::Usb && Settings::usbNotify()) {
         DesktopNotifier::Notification notification;
-        notification.title = tr("Scan de la clé USB");
+        notification.title = tr("Analyse de la clé USB");
         notification.body = tr("Analyse de %1 en cours…").arg(StatusDisplay::pathsText(paths));
         notification.icon = notificationIcon(QStringLiteral("drive-removable-media-usb"),
                                              QStringLiteral(":/icons/status-scanning.svg"));
@@ -193,13 +179,21 @@ void TrayIcon::onScanFinished(const ScanSummary &summary, ScanManager::Origin or
         m_notifier.close(kScanKey); // « Analyse en cours… »
         notify(kScanThreatsKey, notification, StatusDisplay::threatIcon());
     } else if (!summary.fatalError.isEmpty()) {
-        notification.title = tr("Scan impossible");
+        notification.title = tr("Analyse impossible");
         notification.body = summary.fatalError;
         notification.icon = notificationIcon(QStringLiteral("dialog-error"), QStringLiteral(":/icons/result-warning.svg"));
         notify(kScanKey, notification, StatusDisplay::resultIcon(ScanResult::Status::Error));
-    } else if (usb && !summary.cancelled) {
-        notification.title = tr("Clé USB analysée");
-        notification.body = tr("%1\n%2").arg(paths, StatusDisplay::summaryText(summary));
+    } else if (summary.cancelled) {
+        // Arrêtée par l'utilisateur : il le sait déjà.
+        m_notifier.close(kScanKey);
+    } else if (usb ? Settings::usbNotify()
+                   // Fenêtre au premier plan : le bilan est déjà sous les yeux de l'utilisateur.
+                   : Settings::notifyScanFinished() && !QApplication::activeWindow()) {
+        notification.title = usb ? tr("Clé USB analysée") : tr("Analyse terminée");
+        notification.body = usb ? tr("%1\n%2").arg(paths, StatusDisplay::summaryText(summary))
+                                : tr("%1 : %2\n%3").arg(StatusDisplay::originText(origin),
+                                                        StatusDisplay::targetText(origin, summary.paths),
+                                                        StatusDisplay::summaryText(summary));
         notification.icon = notificationIcon(QStringLiteral("security-high"), QStringLiteral(":/icons/status-ok.svg"));
         notify(kScanKey, notification, StatusDisplay::resultIcon(ScanResult::Status::Clean));
     }
@@ -219,7 +213,9 @@ void TrayIcon::onRealtimeThreat(const OnAccessDetection &detection)
     });
     if (!known) {
         m_realtimeThreats.append({detection.path, detection.threat});
-        showRealtimeAlert();
+        // Sans notification (paramètres), l'icône et la fenêtre signalent quand même la menace.
+        if (Settings::notifyRealtime())
+            showRealtimeAlert();
     }
     updateState();
 }
@@ -243,11 +239,43 @@ void TrayIcon::showRealtimeAlert()
     notify(kRealtimeKey, notification, StatusDisplay::threatIcon());
 }
 
+void TrayIcon::onClamdStatusChanged()
+{
+    const ClamdWatcher::State state = m_watcher->state();
+    DesktopNotifier::Notification notification;
+    notification.timeoutMsecs = kNotificationDuration;
+    notification.actions = {{QStringLiteral("default"), tr("Ouvrir la fenêtre")}};
+
+    if (m_lastClamdState == ClamdWatcher::State::Connected && state == ClamdWatcher::State::Error
+        && Settings::notifyClamdLost()) {
+        notification.title = tr("clamd ne répond plus");
+        notification.body = m_watcher->errorMessage();
+        notification.icon = notificationIcon(QStringLiteral("dialog-error"), QStringLiteral(":/icons/status-error.svg"));
+        notify(kClamdKey, notification, StatusDisplay::icon(state));
+    }
+    m_lastClamdState = state;
+
+    // Signatures obsolètes : une seule notification par version des signatures.
+    const ClamdVersion version = m_watcher->version();
+    if (state == ClamdWatcher::State::Connected && Settings::notifySignatures()
+        && StatusDisplay::signaturesOutdated(version, Settings::signaturesMaxAge())
+        && version.signatures != m_outdatedSignaturesNotified) {
+        m_outdatedSignaturesNotified = version.signatures;
+        notification.title = tr("Signatures obsolètes");
+        notification.body = tr("Les signatures de ClamAV datent de %1 jours : vérifiez que freshclam les met à "
+                               "jour (service clamav-freshclam).")
+                                .arg(StatusDisplay::signaturesAgeDays(version));
+        notification.icon = notificationIcon(QStringLiteral("dialog-warning"), QStringLiteral(":/icons/result-warning.svg"));
+        notify(kClamdKey, notification, StatusDisplay::resultIcon(ScanResult::Status::Error));
+    }
+    updateState();
+}
+
 void TrayIcon::onNotificationAction(const QString &key, const QString &action, const QString &activationToken)
 {
     if (action == QLatin1String("folder")) {
         if (!m_realtimeThreats.isEmpty())
-            showInFileManager(m_realtimeThreats.first().path, activationToken);
+            FileActions::showInFileManager(m_realtimeThreats.first().path, activationToken);
         return;
     }
     // Sous Wayland, ce jeton autorise la fenêtre à prendre le focus : Qt le
@@ -288,7 +316,7 @@ void TrayIcon::updateState()
         toolTip = m_threatSummary + QLatin1Char('\n') + toolTip;
     } else if (scanning) {
         setIcon(StatusDisplay::scanningIcon());
-        toolTip = tr("Scan en cours : %1").arg(StatusDisplay::pathsText(m_scans->currentPaths()))
+        toolTip = tr("Analyse en cours : %1").arg(StatusDisplay::pathsText(m_scans->currentPaths()))
             + QLatin1Char('\n') + toolTip;
     } else {
         setIcon(StatusDisplay::icon(clamdState));
@@ -299,6 +327,7 @@ void TrayIcon::updateState()
     m_statusAction->setText(clamdTitle);
     m_onAccessAction->setIcon(StatusDisplay::onAccessIcon(m_onAccess->state()));
     m_onAccessAction->setText(onAccessTitle);
+    m_quickScanAction->setEnabled(!scanning);
     m_scanFolderAction->setEnabled(!scanning);
     m_stopAction->setVisible(scanning);
 }

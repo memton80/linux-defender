@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/ClamdWatcher.h"
 #include "core/ScanManager.h"
 #include "core/ThreatText.h"
 #include "system/DesktopNotifier.h"
@@ -10,7 +11,6 @@
 #include <QMenu>
 #include <QSystemTrayIcon>
 
-class ClamdWatcher;
 class OnAccessController;
 class QAction;
 
@@ -22,6 +22,10 @@ class QAction;
  * Les notifications passent par DesktopNotifier (boutons, alerte critique qui
  * reste affichée, icônes du thème). Sans service de notification, elles se
  * rabattent sur QSystemTrayIcon::showMessage().
+ *
+ * Les notifications facultatives (clés USB, fin d'analyse, temps réel, clamd,
+ * signatures) suivent les paramètres ; les menaces trouvées par une analyse
+ * sont toujours notifiées.
  *
  * L'icône montre, par ordre de priorité : des menaces détectées (scan ou temps
  * réel) et pas encore consultées, un scan en cours, puis l'état de clamd.
@@ -40,6 +44,7 @@ public:
 signals:
     void showWindowRequested();
     void toggleWindowRequested();
+    void quickScanRequested();
     void scanFolderRequested();
     // Clic sur la notification d'une détection en temps réel.
     void showOnAccessRequested();
@@ -50,6 +55,8 @@ private:
     void onScanFinished(const ScanSummary &summary, ScanManager::Origin origin);
     void onRealtimeThreat(const OnAccessDetection &detection);
     void showRealtimeAlert();
+    // Notifications liées à l'état de clamd : clamd perdu, signatures obsolètes.
+    void onClamdStatusChanged();
     void onNotificationAction(const QString &key, const QString &action, const QString &activationToken);
     // Affiche une notification ; `fallbackIcon` sert si le bureau n'a pas de
     // service de notification.
@@ -63,6 +70,7 @@ private:
     QMenu m_menu;
     QAction *m_statusAction;
     QAction *m_onAccessAction;
+    QAction *m_quickScanAction;
     QAction *m_scanFolderAction;
     QAction *m_stopAction;
 
@@ -70,6 +78,8 @@ private:
     QHash<QString, QIcon> m_fallbackIcons; // par clé de notification
     QList<ThreatText::Threat> m_scanThreats;     // premières menaces du scan en cours
     QList<ThreatText::Threat> m_realtimeThreats; // détections de l'alerte affichée, pas encore consultées
+    ClamdWatcher::State m_lastClamdState;
+    QString m_outdatedSignaturesNotified; // version des signatures déjà signalée comme obsolète
     bool m_threatsPending = false;
     QString m_threatSummary;    // infobulle tant que les menaces n'ont pas été consultées
     bool m_lastMessageRealtime = false; // dernière notification : détection en temps réel ?

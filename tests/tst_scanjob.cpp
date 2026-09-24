@@ -90,7 +90,11 @@ private slots:
     void reportsUnreadableFolder();
     void failsWhenClamdMissing();
     void canBeCancelled();
+    void appliesExclusions();
+    void canSkipHiddenFiles();
+    void skipsLargeFiles();
     void managerQueuesScans();
+    void managerAppliesOptions();
     void parseReply_data();
     void parseReply();
 
@@ -140,6 +144,15 @@ void TestScanJob::scansFolderRecursively()
     QCOMPARE(run.lastCount, qint64(4));
     QCOMPARE(run.lastDone, qint64(4));
     QCOMPARE(run.lastTotal, qint64(4));
+
+    // Bilan : menaces citées, début et durée du scan.
+    QCOMPARE(run.summary.threats.size(), 1);
+    QCOMPARE(run.summary.threats.first().path, virus.path);
+    QCOMPARE(run.summary.threats.first().detail, virus.detail);
+    QVERIFY(run.summary.started.isValid());
+    QVERIFY(run.summary.started <= QDateTime::currentDateTime());
+    QVERIFY(run.summary.elapsedMsecs >= 0);
+    QCOMPARE(run.summary.skipped, qint64(0));
 }
 
 void TestScanJob::scansSingleFile()
@@ -241,6 +254,79 @@ void TestScanJob::canBeCancelled()
     QVERIFY(run.summary.scanned < 200);
 }
 
+void TestScanJob::appliesExclusions()
+{
+    FakeClamd clamd(socketPath(), QByteArrayLiteral("PONG\0"));
+    writeFile(m_root + QStringLiteral("/garde.txt"), "x");
+    writeFile(m_root + QStringLiteral("/vm/disque.img"), FakeClamd::kVirusMarker);
+    writeFile(m_root + QStringLiteral("/vm/sous/autre.img"), "x");
+    writeFile(m_root + QStringLiteral("/faux-positif.exe"), FakeClamd::kVirusMarker);
+    // Même début de nom qu'un dossier exclu, mais pas dedans : analysé.
+    writeFile(m_root + QStringLiteral("/vm2/garde.txt"), "x");
+
+    ScanOptions options;
+    // Chemin non canonique (« // », « /./ ») : rendu canonique par le scan.
+    options.excludedPaths = {m_root + QStringLiteral("//vm/"), m_root + QStringLiteral("/./faux-positif.exe"),
+                             QStringLiteral("/chemin/qui/n-existe/pas")};
+    ScanJob job(socketPath(), {m_root}, options);
+    const Run run = runJob(job);
+
+    QVERIFY2(run.summary.fatalError.isEmpty(), qPrintable(run.summary.fatalError));
+    QCOMPARE(run.summary.scanned, qint64(2));
+    QCOMPARE(run.summary.infected, qint64(0));
+    QCOMPARE(run.lastTotal, qint64(2)); // les exclusions ne sont pas comptées non plus
+    QCOMPARE(find(run, m_root + QStringLiteral("/vm/disque.img")).path, QStringLiteral("<absent>"));
+    QCOMPARE(int(find(run, m_root + QStringLiteral("/vm2/garde.txt")).status), int(ScanResult::Status::Clean));
+
+    // Choisi explicitement, un élément exclu est quand même analysé.
+    ScanJob explicitJob(socketPath(), {m_root + QStringLiteral("/vm")}, options);
+    const Run explicitRun = runJob(explicitJob);
+    QCOMPARE(explicitRun.summary.scanned, qint64(2));
+    QCOMPARE(explicitRun.summary.infected, qint64(1));
+}
+
+void TestScanJob::canSkipHiddenFiles()
+{
+    FakeClamd clamd(socketPath(), QByteArrayLiteral("PONG\0"));
+    writeFile(m_root + QStringLiteral("/visible.txt"), "x");
+    writeFile(m_root + QStringLiteral("/.cache/cache.txt"), "x");
+    writeFile(m_root + QStringLiteral("/.cache.txt"), "x");
+
+    ScanOptions options;
+    options.scanHidden = false;
+    ScanJob job(socketPath(), {m_root}, options);
+    const Run run = runJob(job);
+
+    QCOMPARE(run.summary.scanned, qint64(1));
+    QCOMPARE(run.results.size(), 1);
+    QCOMPARE(run.results.first().path, m_root + QStringLiteral("/visible.txt"));
+}
+
+void TestScanJob::skipsLargeFiles()
+{
+    FakeClamd clamd(socketPath(), QByteArrayLiteral("PONG\0"));
+    const QString big = m_root + QStringLiteral("/gros.iso");
+    writeFile(m_root + QStringLiteral("/petit.txt"), "x");
+    writeFile(big, QByteArray(100, 'x') + FakeClamd::kVirusMarker);
+
+    ScanOptions options;
+    options.maxFileSize = 50;
+    ScanJob job(socketPath(), {m_root}, options);
+    const Run run = runJob(job);
+
+    QCOMPARE(run.summary.scanned, qint64(1));
+    QCOMPARE(run.summary.skipped, qint64(1));
+    QCOMPARE(run.summary.infected, qint64(0));
+    // Progression cohérente : le fichier ignoré n'est pas dans le total.
+    QCOMPARE(run.lastDone, run.lastTotal);
+
+    // Choisi explicitement, un gros fichier est quand même analysé.
+    ScanJob explicitJob(socketPath(), {big}, options);
+    const Run explicitRun = runJob(explicitJob);
+    QCOMPARE(explicitRun.summary.skipped, qint64(0));
+    QCOMPARE(explicitRun.summary.infected, qint64(1));
+}
+
 void TestScanJob::managerQueuesScans()
 {
     FakeClamd clamd(socketPath(), QByteArrayLiteral("PONG\0"));
@@ -267,6 +353,29 @@ void TestScanJob::managerQueuesScans()
     QCOMPARE(finished.at(1).at(1).value<ScanManager::Origin>(), ScanManager::Origin::Usb);
     QCOMPARE(finished.at(1).at(0).value<ScanSummary>().infected, qint64(1));
     QVERIFY(!manager.isScanning());
+}
+
+void TestScanJob::managerAppliesOptions()
+{
+    FakeClamd clamd(socketPath(), QByteArrayLiteral("PONG\0"));
+    writeFile(m_root + QStringLiteral("/garde.txt"), "x");
+    writeFile(m_root + QStringLiteral("/exclu/virus.bin"), FakeClamd::kVirusMarker);
+
+    ClamdClient client;
+    client.setSocketPath(socketPath());
+    ScanManager manager(&client);
+    ScanOptions options;
+    options.excludedPaths = {m_root + QStringLiteral("/exclu")};
+    manager.setOptions(options);
+    QCOMPARE(manager.options(), options);
+    QSignalSpy finished(&manager, &ScanManager::scanFinished);
+
+    manager.scan({m_root}, ScanManager::Origin::Full);
+    QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+    QCOMPARE(finished.at(0).at(1).value<ScanManager::Origin>(), ScanManager::Origin::Full);
+    const ScanSummary summary = finished.at(0).at(0).value<ScanSummary>();
+    QCOMPARE(summary.scanned, qint64(1));
+    QCOMPARE(summary.infected, qint64(0));
 }
 
 void TestScanJob::parseReply_data()

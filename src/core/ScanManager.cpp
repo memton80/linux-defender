@@ -8,6 +8,16 @@ ScanManager::ScanManager(ClamdClient *client, QObject *parent)
 {
 }
 
+void ScanManager::setOptions(const ScanOptions &options)
+{
+    m_options = options;
+}
+
+ScanOptions ScanManager::options() const
+{
+    return m_options;
+}
+
 void ScanManager::scan(const QStringList &paths, Origin origin)
 {
     if (paths.isEmpty())
@@ -53,7 +63,7 @@ void ScanManager::startNext()
 
     const Request request = m_queue.takeFirst();
     m_origin = request.origin;
-    m_job = new ScanJob(m_client->socketPath(), request.paths, this);
+    m_job = new ScanJob(m_client->socketPath(), request.paths, m_options, this);
 
     // Le ScanJob émet depuis son thread : ces connexions passent par la file
     // d'événements et les signaux arrivent dans le thread de l'interface.

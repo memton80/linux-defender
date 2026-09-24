@@ -126,3 +126,41 @@ QVariant ScanResultsModel::headerData(int section, Qt::Orientation orientation, 
     }
     return {};
 }
+
+ScanResultsFilter::ScanResultsFilter(QObject *parent)
+    : QSortFilterProxyModel(parent)
+{
+    setSortRole(ScanResultsModel::SortRole);
+    setDynamicSortFilter(true);
+}
+
+void ScanResultsFilter::setStatus(std::optional<ScanResult::Status> status)
+{
+    if (status == m_status)
+        return;
+    m_status = status;
+    invalidateFilter();
+}
+
+void ScanResultsFilter::setText(const QString &text)
+{
+    const QString trimmed = text.trimmed();
+    if (trimmed == m_text)
+        return;
+    m_text = trimmed;
+    invalidateFilter();
+}
+
+bool ScanResultsFilter::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const
+{
+    const QAbstractItemModel *model = sourceModel();
+    if (m_status && model->index(sourceRow, 0, sourceParent).data(ScanResultsModel::StatusRole).toInt() != int(*m_status))
+        return false;
+    if (m_text.isEmpty())
+        return true;
+    for (const int column : {ScanResultsModel::PathColumn, ScanResultsModel::DetailColumn}) {
+        if (model->index(sourceRow, column, sourceParent).data().toString().contains(m_text, Qt::CaseInsensitive))
+            return true;
+    }
+    return false;
+}

@@ -2,6 +2,7 @@
 
 #include "ClamdClient.h"
 
+#include <QDir>
 #include <QDirIterator>
 #include <QElapsedTimer>
 #include <QFile>
@@ -10,6 +11,7 @@
 #include <QQueue>
 #include <QThread>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 
@@ -40,6 +42,31 @@ const QStringList &excludedDirectories()
 QString errnoString(int error)
 {
     return QString::fromLocal8Bit(std::strerror(error));
+}
+
+// Exclusions sous forme canonique : c'est sous cette forme que le parcours
+// rencontre les chemins. Un chemin inexistant est gardé tel quel (nettoyé).
+ScanOptions canonicalOptions(ScanOptions options)
+{
+    QStringList excluded;
+    for (const QString &path : std::as_const(options.excludedPaths)) {
+        if (path.isEmpty())
+            continue;
+        const QString canonical = QFileInfo(path).canonicalFilePath();
+        excluded << (canonical.isEmpty() ? QDir::cleanPath(path) : canonical);
+    }
+    excluded.removeDuplicates();
+    options.excludedPaths = excluded;
+    return options;
+}
+
+// `path` est-il `directory` ou un élément de son contenu ?
+bool isInside(const QString &path, const QString &directory)
+{
+    if (directory == QLatin1String("/"))
+        return true;
+    return path.startsWith(directory)
+        && (path.size() == directory.size() || path.at(directory.size()) == QLatin1Char('/'));
 }
 
 // Ferme un descripteur de fichier en fin de portée.
@@ -91,10 +118,11 @@ bool sendFileDescriptor(int socketFd, int fd)
 
 } // namespace
 
-ScanJob::ScanJob(const QString &socketPath, const QStringList &paths, QObject *parent)
+ScanJob::ScanJob(const QString &socketPath, const QStringList &paths, const ScanOptions &options, QObject *parent)
     : QObject(parent)
     , m_socketPath(socketPath)
     , m_paths(paths)
+    , m_options(canonicalOptions(options))
 {
 }
 
@@ -159,19 +187,26 @@ void ScanJob::run()
 {
     ScanSummary summary;
     summary.paths = m_paths;
+    summary.started = QDateTime::currentDateTime();
+    QElapsedTimer duration;
+    duration.start();
+    const auto finish = [&] {
+        summary.elapsedMsecs = duration.elapsed();
+        emit finished(summary);
+    };
 
     // 1. clamd répond-il ?
     const Reply ping = request(QByteArrayLiteral("zPING"), -1, kConnectTimeout);
     if (m_cancelled) {
         summary.cancelled = true;
-        emit finished(summary);
+        finish();
         return;
     }
     if (!ping.error.isEmpty() || ping.data != "PONG") {
         summary.fatalError = !ping.error.isEmpty()
             ? ping.error
             : ClamdClient::errorMessage(ClamdClient::Error::ProtocolError, m_socketPath, QString::fromUtf8(ping.data));
-        emit finished(summary);
+        finish();
         return;
     }
 
@@ -202,9 +237,11 @@ void ScanJob::run()
         sinceSignal.restart();
     };
     auto add = [&](ScanResult result) {
-        if (result.status == ScanResult::Status::Infected)
+        if (result.status == ScanResult::Status::Infected) {
             ++summary.infected;
-        else if (result.status == ScanResult::Status::Error)
+            if (summary.threats.size() < ScanSummary::kMaxThreats)
+                summary.threats.append(result);
+        } else if (result.status == ScanResult::Status::Error)
             ++summary.errors;
         batch.append(std::move(result));
         if (sinceSignal.hasExpired(kFlushInterval) || batch.size() >= kMaxBatchSize)
@@ -227,16 +264,16 @@ void ScanJob::run()
     };
 
     for (const QString &root : m_paths) {
-        if (!walk(root, onFile, onError))
+        if (!walk(root, onFile, onError, &summary.skipped))
             break;
     }
 
     flush();
     summary.cancelled = m_cancelled;
-    emit finished(summary);
+    finish();
 }
 
-bool ScanJob::walk(const QString &root, const FileVisitor &onFile, const ErrorVisitor &onError)
+bool ScanJob::walk(const QString &root, const FileVisitor &onFile, const ErrorVisitor &onError, qint64 *skipped)
 {
     // canonicalFilePath() résout les liens symboliques choisis explicitement
     // par l'utilisateur ; il est vide si le chemin n'existe pas.
@@ -246,6 +283,18 @@ bool ScanJob::walk(const QString &root, const FileVisitor &onFile, const ErrorVi
         return !onError || onError(root, tr("Introuvable"));
     if (!rootInfo.isDir())
         return onFile(start);
+
+    // Exclusions qui contiennent le dossier choisi : l'utilisateur a demandé
+    // explicitement ce dossier, elles ne s'appliquent pas à son contenu.
+    QStringList excluded;
+    for (const QString &path : m_options.excludedPaths) {
+        if (!isInside(start, path))
+            excluded << path;
+    }
+    const auto isExcluded = [&excluded](const QString &path) {
+        return std::any_of(excluded.cbegin(), excluded.cend(),
+                           [&path](const QString &directory) { return isInside(path, directory); });
+    };
 
     QQueue<QString> directories;
     directories.enqueue(start);
@@ -261,16 +310,26 @@ bool ScanJob::walk(const QString &root, const FileVisitor &onFile, const ErrorVi
             continue;
         }
 
-        QDirIterator it(directory, QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot);
+        QDir::Filters filters = QDir::AllEntries | QDir::System | QDir::NoDotAndDotDot;
+        if (m_options.scanHidden)
+            filters |= QDir::Hidden;
+        QDirIterator it(directory, filters);
         while (it.hasNext()) {
             const QString path = it.next();
             const QFileInfo info = it.fileInfo();
             if (info.isSymLink())
                 continue; // jamais suivis : évite les boucles et les sorties du dossier
+            if (isExcluded(path))
+                continue;
             if (info.isDir()) {
                 if (!excludedDirectories().contains(path))
                     directories.enqueue(path);
             } else if (info.isFile()) {
+                if (m_options.maxFileSize > 0 && info.size() > m_options.maxFileSize) {
+                    if (skipped)
+                        ++*skipped;
+                    continue;
+                }
                 if (!onFile(path))
                     return false;
             }

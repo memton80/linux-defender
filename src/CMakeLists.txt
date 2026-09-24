@@ -5,6 +5,8 @@ add_library(defender_core STATIC
     core/ClamdClient.cpp
     core/ClamdWatcher.h
     core/ClamdWatcher.cpp
+    core/ScanHistory.h
+    core/ScanHistory.cpp
     core/ScanJob.h
     core/ScanJob.cpp
     core/ScanManager.h
@@ -51,6 +53,14 @@ target_compile_definitions(defender_system PUBLIC
 # Application graphique (QtWidgets).
 qt_add_executable(linux-defender
     main.cpp
+    ui/DashboardPage.h
+    ui/DashboardPage.cpp
+    ui/FileActions.h
+    ui/FileActions.cpp
+    ui/HistoryModel.h
+    ui/HistoryModel.cpp
+    ui/HistoryPanel.h
+    ui/HistoryPanel.cpp
     ui/MainWindow.h
     ui/MainWindow.cpp
     ui/OnAccessModel.h
@@ -67,6 +77,8 @@ qt_add_executable(linux-defender
     ui/StatusDisplay.cpp
     ui/TrayIcon.h
     ui/TrayIcon.cpp
+    ui/Widgets.h
+    ui/Widgets.cpp
 )
 target_compile_definitions(linux-defender PRIVATE DEFENDER_VERSION="${DEFENDER_VERSION}")
 target_link_libraries(linux-defender PRIVATE defender_core defender_system Qt6::Widgets)

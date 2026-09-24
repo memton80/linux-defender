@@ -1,5 +1,6 @@
 #include "core/ClamdClient.h"
 #include "core/ClamdWatcher.h"
+#include "core/ScanHistory.h"
 #include "core/ScanManager.h"
 #include "core/Settings.h"
 #include "system/OnAccessController.h"
@@ -11,6 +12,8 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QIcon>
+#include <QLibraryInfo>
+#include <QTranslator>
 
 int main(int argc, char *argv[])
 {
@@ -22,6 +25,14 @@ int main(int argc, char *argv[])
     // Relie les fenêtres au fichier linux-defender.desktop (icône dans la barre des tâches sous Wayland).
     QApplication::setDesktopFileName(QStringLiteral("linux-defender"));
     QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/linux-defender.svg")));
+
+    // Textes de Qt lui-même (boutons standard, sélecteur de fichiers...) dans
+    // la langue du système, hors Plasma aussi. Sans traduction installée, ils
+    // restent en anglais.
+    QTranslator qtTranslator;
+    if (qtTranslator.load(QLocale(), QStringLiteral("qtbase"), QStringLiteral("_"),
+                          QLibraryInfo::path(QLibraryInfo::TranslationsPath)))
+        QApplication::installTranslator(&qtTranslator);
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QCoreApplication::translate("main", "Interface légère pour l'antivirus ClamAV."));
@@ -44,13 +55,22 @@ int main(int argc, char *argv[])
         return 0;
 
     ClamdClient client;
-    client.setSocketPath(parser.isSet(socketOption) ? parser.value(socketOption) : Settings::effectiveSocketPath());
-
     ClamdWatcher watcher(&client);
     ScanManager scans(&client);
+    ScanHistory history;
+    // Réglages pris en compte au lancement, puis à chaque modification.
+    const QString socketFromCommandLine = parser.value(socketOption);
+    const auto applySettings = [&] {
+        client.setSocketPath(!socketFromCommandLine.isEmpty() ? socketFromCommandLine : Settings::effectiveSocketPath());
+        watcher.setInterval(Settings::checkInterval() * 1000);
+        scans.setOptions(Settings::scanOptions());
+        history.setMaxRecords(Settings::historyMaxEntries());
+    };
+    applySettings();
+
     UsbMonitor usb;
     OnAccessController onAccess;
-    MainWindow window(&watcher, &scans, &onAccess);
+    MainWindow window(&watcher, &scans, &onAccess, &history);
     TrayIcon tray(&watcher, &scans, &onAccess);
 
     QObject::connect(&instance, &SingleInstance::messageReceived, &window, [&window](const QByteArray &message) {
@@ -59,6 +79,7 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&tray, &TrayIcon::showWindowRequested, &window, &MainWindow::showAndActivate);
     QObject::connect(&tray, &TrayIcon::toggleWindowRequested, &window, &MainWindow::toggleVisibility);
+    QObject::connect(&tray, &TrayIcon::quickScanRequested, &window, &MainWindow::startQuickScan);
     QObject::connect(&tray, &TrayIcon::scanFolderRequested, &window, &MainWindow::chooseFolderToScan);
     QObject::connect(&tray, &TrayIcon::showOnAccessRequested, &window, &MainWindow::showOnAccess);
     QObject::connect(&window, &MainWindow::windowActivated, &tray, &TrayIcon::acknowledgeThreats);
@@ -67,8 +88,12 @@ int main(int argc, char *argv[])
         if (window.isActiveWindow())
             tray.acknowledgeThreats();
     });
-    QObject::connect(&window, &MainWindow::settingsChanged, &watcher, [&client, &watcher] {
-        client.setSocketPath(Settings::effectiveSocketPath());
+    QObject::connect(&scans, &ScanManager::scanFinished, &history,
+                     [&history](const ScanSummary &summary, ScanManager::Origin origin) {
+                         history.add(ScanRecord::fromSummary(summary, origin));
+                     });
+    QObject::connect(&window, &MainWindow::settingsChanged, &watcher, [&applySettings, &watcher] {
+        applySettings();
         watcher.checkNow();
     });
     QObject::connect(&usb, &UsbMonitor::removableMounted, &scans, [&scans](const QString &mountPoint) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QDateTime>
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -29,12 +30,37 @@ struct ScanResult
 // Bilan d'un scan terminé.
 struct ScanSummary
 {
+    // Menaces gardées dans `threats` : de quoi les citer (notification,
+    // historique) sans garder en mémoire un nombre illimité de résultats.
+    static constexpr int kMaxThreats = 100;
+
     QStringList paths;  // fichiers ou dossiers demandés
+    QDateTime started;  // début du scan
+    qint64 elapsedMsecs = 0;
     qint64 scanned = 0; // fichiers traités : sains + infectés + en erreur
     qint64 infected = 0;
     qint64 errors = 0;  // fichiers ou dossiers illisibles, erreurs de clamd
+    qint64 skipped = 0; // fichiers ignorés car plus gros que ScanOptions::maxFileSize
     bool cancelled = false;
     QString fatalError; // non vide si le scan n'a pas pu aller au bout (clamd injoignable...)
+    QList<ScanResult> threats; // premières menaces trouvées (au plus kMaxThreats)
+};
+
+// Réglages d'un scan (voir les paramètres de l'application). Ils portent sur
+// le contenu des dossiers parcourus : un fichier ou un dossier choisi
+// explicitement par l'utilisateur est toujours analysé.
+struct ScanOptions
+{
+    QStringList excludedPaths; // dossiers ou fichiers ignorés, avec tout leur contenu
+    bool scanHidden = true;    // fichiers et dossiers cachés (nom commençant par un point)
+    qint64 maxFileSize = 0;    // en octets ; 0 = pas de limite
+
+    bool operator==(const ScanOptions &other) const
+    {
+        return excludedPaths == other.excludedPaths && scanHidden == other.scanHidden
+            && maxFileSize == other.maxFileSize;
+    }
+    bool operator!=(const ScanOptions &other) const { return !(*this == other); }
 };
 
 /**
@@ -55,14 +81,16 @@ struct ScanSummary
  *   1. PING : clamd répond-il ? Sinon, inutile de parcourir le dossier.
  *   2. Comptage des fichiers, pour afficher une vraie progression.
  *   3. Scan des fichiers, un par un.
- * Les liens symboliques ne sont pas suivis ; /proc, /sys et /dev sont ignorés.
+ * Les liens symboliques ne sont pas suivis ; /proc, /sys et /dev sont ignorés,
+ * ainsi que ce qu'exclut ScanOptions.
  */
 class ScanJob : public QObject
 {
     Q_OBJECT
 
 public:
-    ScanJob(const QString &socketPath, const QStringList &paths, QObject *parent = nullptr);
+    ScanJob(const QString &socketPath, const QStringList &paths, const ScanOptions &options = {},
+            QObject *parent = nullptr);
     ~ScanJob() override; // annule le scan et attend la fin du thread
 
     QStringList paths() const;
@@ -98,12 +126,15 @@ private:
     // Les méthodes suivantes s'exécutent dans le thread de travail et sont
     // bloquantes : ne jamais les appeler depuis le thread de l'interface.
     void run();
-    bool walk(const QString &root, const FileVisitor &onFile, const ErrorVisitor &onError);
+    // Parcourt `root`. Les fichiers ignorés à cause de leur taille sont
+    // comptés dans `skipped` (s'il n'est pas nul), sans passer par `onFile`.
+    bool walk(const QString &root, const FileVisitor &onFile, const ErrorVisitor &onError, qint64 *skipped = nullptr);
     ScanResult scanFile(const QString &path, QString *fatalError);
     Reply request(const QByteArray &command, int fileDescriptor, int timeoutMsecs);
 
     const QString m_socketPath;
     const QStringList m_paths;
+    const ScanOptions m_options; // chemins d'exclusion déjà rendus canoniques
     std::atomic_bool m_cancelled{false};
     QThread *m_thread = nullptr;
 };

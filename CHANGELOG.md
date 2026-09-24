@@ -4,6 +4,30 @@ Les versions publiées correspondent aux tags `vX.Y.Z` (voir les
 [releases](https://github.com/memton80/linux-defender/releases)). Les paquets construits hors tag
 portent la version `0.0.0~dev`.
 
+## [Non publié]
+
+### Ajouté
+
+- **Nouvelle interface.** Barre latérale avec quatre pages :
+  - **Accueil** : bandeau qui résume l'état de la protection (vert, orange ou rouge) avec l'action
+    la plus utile, tuiles d'état (clamd, signatures et leur âge, temps réel, dernière analyse, clés
+    USB, historique) et boutons d'analyse ;
+  - **Analyse** : progression détaillée (fichier en cours, compteurs, durée), bilan, filtres
+    (menaces, erreurs, sains), recherche, export CSV ;
+  - **Protection en temps réel** : état, dossiers surveillés, détections ;
+  - **Historique** : analyses passées, avec leur bilan et leurs menaces.
+  Clic droit sur un fichier : l'afficher dans le gestionnaire de fichiers, copier son chemin ou le
+  nom de la menace. Couleurs du thème, sans feuille de style (Breeze clair et sombre).
+- **Analyse rapide** (Téléchargements, Bureau, Documents) et **analyse complète** (dossier
+  personnel), aussi depuis le menu de l'icône.
+- **Historique des analyses**, enregistré dans `~/.local/share/linux-defender/history.json`.
+- **Paramètres en pages** (Général, Analyse, Clés USB, Notifications, clamd), avec « Appliquer » et
+  « Valeurs par défaut ». Nouveaux réglages : dossiers de l'analyse rapide, exclusions, fichiers
+  cachés, taille maximale des fichiers, notifications (fin d'analyse, clés USB, temps réel, clamd
+  perdu, signatures obsolètes), fermeture de la fenêtre, taille de l'historique, intervalle de
+  vérification de clamd, âge maximal des signatures, test de connexion au socket.
+- Textes de Qt (boutons standard, sélecteur de fichiers) traduits hors Plasma aussi.
+
 ## [1.0.1] — 2026-09-24
 
 ### Corrigé

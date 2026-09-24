@@ -2,14 +2,23 @@
 
 #include <QDialog>
 
+class ClamdClient;
+class PathListEdit;
 class QCheckBox;
+class QDialogButtonBox;
+class QLabel;
 class QLineEdit;
+class QListWidget;
+class QSpinBox;
+class QStackedWidget;
 
 /**
- * Petite boîte de dialogue « Paramètres » : chemin du socket de clamd, scan
- * automatique des clés USB, démarrage automatique à l'ouverture de session.
+ * Boîte de dialogue « Paramètres », en pages : Général, Analyse, Clés USB,
+ * Notifications, clamd.
  *
- * Les réglages sont enregistrés quand on valide (bouton OK).
+ * Les réglages sont enregistrés avec « OK » ou « Appliquer » (signal
+ * applied()) ; « Valeurs par défaut » remplit toutes les pages avec les
+ * valeurs par défaut, sans rien enregistrer.
  */
 class SettingsDialog : public QDialog
 {
@@ -20,8 +29,54 @@ public:
 
     void accept() override;
 
+signals:
+    // Réglages enregistrés : l'application doit les prendre en compte.
+    void applied();
+
 private:
-    QLineEdit *m_socketPath;
-    QCheckBox *m_usbAutoScan;
+    QWidget *createGeneralPage();
+    QWidget *createScanPage();
+    QWidget *createUsbPage();
+    QWidget *createNotificationsPage();
+    QWidget *createClamdPage();
+    void addPage(QWidget *content, const QString &name, const QString &description, const QIcon &icon);
+
+    void load();
+    void loadDefaults();
+    void apply();
+    void setModified(bool modified);
+    void watchChanges();
+    void updateDependentWidgets();
+    void testConnection();
+
+    QListWidget *m_pageList;
+    QStackedWidget *m_pages;
+    QDialogButtonBox *m_buttons;
+    bool m_modified = false;
+
+    // Général
     QCheckBox *m_autostart;
+    QCheckBox *m_closeToTray;
+    QSpinBox *m_historyMax;
+    // Analyse
+    PathListEdit *m_quickScanPaths;
+    PathListEdit *m_excludedPaths;
+    QCheckBox *m_scanHidden;
+    QCheckBox *m_limitFileSize;
+    QSpinBox *m_maxFileSize;
+    // Clés USB
+    QCheckBox *m_usbAutoScan;
+    QCheckBox *m_usbNotify;
+    // Notifications
+    QCheckBox *m_notifyScanFinished;
+    QCheckBox *m_notifyRealtime;
+    QCheckBox *m_notifyClamdLost;
+    QCheckBox *m_notifySignatures;
+    // clamd
+    QLineEdit *m_socketPath;
+    QSpinBox *m_checkInterval;
+    QSpinBox *m_signaturesMaxAge;
+    QLabel *m_testIcon;
+    QLabel *m_testResult;
+    ClamdClient *m_testClient;
 };
