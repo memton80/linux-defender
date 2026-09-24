@@ -2,7 +2,7 @@
 
 #include "core/ScanManager.h"
 
-#include <QGroupBox>
+#include <QWidget>
 
 class QCheckBox;
 class QLabel;
@@ -13,13 +13,13 @@ class QTreeView;
 class ScanResultsModel;
 
 /**
- * Section « Scan » de la fenêtre principale : boutons de scan, progression,
+ * Onglet « Scan » de la fenêtre principale : boutons de scan, progression,
  * résumé et liste des fichiers analysés.
  *
  * Elle ne lance rien elle-même : tout passe par le ScanManager, qu'elle
  * observe aussi pour afficher les scans automatiques (clés USB).
  */
-class ScanPanel : public QGroupBox
+class ScanPanel : public QWidget
 {
     Q_OBJECT
 
