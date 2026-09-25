@@ -18,6 +18,7 @@ struct ScanRecord
     qint64 elapsedMsecs = 0;
     ScanManager::Origin origin = ScanManager::Origin::Manual;
     QStringList paths;
+    bool systemAreas = false; // emplacements sensibles et programmes en cours analysés aussi
     qint64 scanned = 0;
     qint64 infected = 0;
     qint64 suspicious = 0;

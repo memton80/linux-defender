@@ -23,6 +23,8 @@ QString originKey(ScanManager::Origin origin)
         return QStringLiteral("quick");
     case ScanManager::Origin::Full:
         return QStringLiteral("full");
+    case ScanManager::Origin::Scheduled:
+        return QStringLiteral("scheduled");
     case ScanManager::Origin::Manual:
         break;
     }
@@ -55,6 +57,8 @@ ScanManager::Origin originFromKey(const QString &key)
         return ScanManager::Origin::Quick;
     if (key == QLatin1String("full"))
         return ScanManager::Origin::Full;
+    if (key == QLatin1String("scheduled"))
+        return ScanManager::Origin::Scheduled;
     return ScanManager::Origin::Manual;
 }
 }
@@ -66,6 +70,7 @@ ScanRecord ScanRecord::fromSummary(const ScanSummary &summary, ScanManager::Orig
     record.elapsedMsecs = summary.elapsedMsecs;
     record.origin = origin;
     record.paths = summary.paths;
+    record.systemAreas = summary.systemAreas;
     record.scanned = summary.scanned;
     record.infected = summary.infected;
     record.suspicious = summary.suspicious;
@@ -83,6 +88,7 @@ ScanSummary ScanRecord::toSummary() const
 {
     ScanSummary summary;
     summary.paths = paths;
+    summary.systemAreas = systemAreas;
     summary.started = started;
     summary.elapsedMsecs = elapsedMsecs;
     summary.scanned = scanned;
@@ -105,6 +111,7 @@ QJsonObject ScanRecord::toJson() const
         {QStringLiteral("elapsedMsecs"), elapsedMsecs},
         {QStringLiteral("origin"), originKey(origin)},
         {QStringLiteral("paths"), QJsonArray::fromStringList(paths)},
+        {QStringLiteral("systemAreas"), systemAreas},
         {QStringLiteral("scanned"), scanned},
         {QStringLiteral("infected"), infected},
         {QStringLiteral("suspicious"), suspicious},
@@ -130,6 +137,7 @@ std::optional<ScanRecord> ScanRecord::fromJson(const QJsonObject &object)
     record.origin = originFromKey(object.value(QStringLiteral("origin")).toString());
     for (const QJsonValue &path : object.value(QStringLiteral("paths")).toArray())
         record.paths << path.toString();
+    record.systemAreas = object.value(QStringLiteral("systemAreas")).toBool();
     record.scanned = object.value(QStringLiteral("scanned")).toInteger();
     record.infected = object.value(QStringLiteral("infected")).toInteger();
     // Absents des historiques écrits par les versions 1.0.x : 0 et liste vide.

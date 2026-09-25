@@ -34,6 +34,8 @@ add_library(defender_system STATIC
     system/OnAccessLog.cpp
     system/PrivilegedHelper.h
     system/PrivilegedHelper.cpp
+    system/ScanSchedule.h
+    system/ScanSchedule.cpp
     system/SingleInstance.h
     system/SingleInstance.cpp
     system/SystemDiagnostics.h

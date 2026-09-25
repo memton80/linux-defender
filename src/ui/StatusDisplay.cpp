@@ -207,6 +207,8 @@ QString originText(ScanManager::Origin origin)
         return tr("Analyse complète");
     case ScanManager::Origin::Usb:
         return tr("Clé USB");
+    case ScanManager::Origin::Scheduled:
+        return tr("Analyse planifiée");
     case ScanManager::Origin::Manual:
         break;
     }
@@ -216,13 +218,21 @@ QString originText(ScanManager::Origin origin)
 QString targetText(ScanManager::Origin origin, const QStringList &paths)
 {
     // Analyse rapide : les noms des dossiers parlent plus que leurs chemins.
-    if (origin == ScanManager::Origin::Quick && paths.size() > 1 && paths.size() <= 4) {
+    const bool quick = origin == ScanManager::Origin::Quick || origin == ScanManager::Origin::Scheduled;
+    if (quick && paths.size() > 1 && paths.size() <= 4) {
         QStringList names;
         for (const QString &path : paths)
             names << QFileInfo(path).fileName();
         return names.join(QStringLiteral(", "));
     }
     return pathsText(paths);
+}
+
+QString quickScanText(const QStringList &paths, bool systemAreas)
+{
+    const QString folders = targetText(ScanManager::Origin::Quick, paths);
+    return systemAreas ? tr("%1, démarrage automatique, fichiers temporaires et programmes en cours").arg(folders)
+                       : folders;
 }
 
 Level summaryLevel(const ScanSummary &summary)

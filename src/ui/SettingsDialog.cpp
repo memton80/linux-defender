@@ -7,9 +7,11 @@
 #include "core/ScanHistory.h"
 #include "core/Settings.h"
 #include "system/Autostart.h"
+#include "system/ScanSchedule.h"
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -172,6 +174,13 @@ QWidget *SettingsDialog::createScanPage()
                               .arg(StatusDisplay::targetText(ScanManager::Origin::Quick,
                                                              Settings::Defaults::quickScanPaths()))));
     quick->addWidget(m_quickScanPaths);
+    m_quickScanSystemAreas = new QCheckBox(tr("Analyser aussi les emplacements sensibles et les programmes en cours"));
+    quick->addWidget(m_quickScanSystemAreas);
+    quick->addWidget(note(tr("Là où un programme malveillant s'installe pour se relancer ou dépose ses fichiers : "
+                             "démarrage automatique (~/.config/autostart, services utilisateur), ~/.local/bin, "
+                             "scripts du shell (~/.bashrc...), /tmp, /var/tmp, /dev/shm (vos fichiers seulement). Et le "
+                             "programme de chaque processus en cours, même supprimé du disque. Quelques secondes de "
+                             "plus.")));
 
     m_excludedPaths = new PathListEdit(PathListEdit::Mode::FoldersAndFiles);
     auto *exclusions = new QVBoxLayout;
@@ -203,10 +212,32 @@ QWidget *SettingsDialog::createScanPage()
                                 .arg(clamdLimit, clamdConfig.path.isEmpty() ? tr("les valeurs par défaut de clamd")
                                                                             : clamdConfig.path)));
 
+    // Analyses planifiées.
+    m_scheduleFrequency = new QComboBox;
+    m_scheduleFrequency->addItem(tr("Jamais"), int(ScanSchedule::Frequency::Never));
+    m_scheduleFrequency->addItem(tr("Chaque jour"), int(ScanSchedule::Frequency::Daily));
+    m_scheduleFrequency->addItem(tr("Chaque semaine"), int(ScanSchedule::Frequency::Weekly));
+    m_scheduleKind = new QComboBox;
+    m_scheduleKind->addItem(tr("Analyse rapide"), int(ScanSchedule::Kind::Quick));
+    m_scheduleKind->addItem(tr("Analyse complète (dossier personnel)"), int(ScanSchedule::Kind::Full));
+    m_scheduleSkipOnBattery = new QCheckBox(tr("Reporter quand l'ordinateur est sur batterie"));
+    auto *scheduleForm = new QFormLayout;
+    scheduleForm->addRow(tr("Fréquence :"), m_scheduleFrequency);
+    scheduleForm->addRow(tr("Analyse :"), m_scheduleKind);
+    auto *schedule = new QVBoxLayout;
+    schedule->addLayout(scheduleForm);
+    schedule->addWidget(m_scheduleSkipOnBattery);
+    const QDateTime lastRun = Settings::scheduleLastRun();
+    schedule->addWidget(note(tr("Elle a lieu quand Linux Defender tourne (lancement à l'ouverture de la session "
+                                "conseillé), au plus tôt 5 minutes après son lancement ; une analyse manquée est "
+                                "faite dès que possible. Dernière analyse planifiée : %1.")
+                                 .arg(lastRun.isValid() ? StatusDisplay::relativeTime(lastRun) : tr("jamais"))));
+
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(group(tr("Analyse rapide"), quick), 1);
+    layout->addWidget(group(tr("Analyse planifiée"), schedule));
     layout->addWidget(group(tr("Exclusions"), exclusions), 1);
     layout->addWidget(group(tr("Options"), options));
     return page;
@@ -341,6 +372,10 @@ void SettingsDialog::load()
     m_historyMax->setValue(Settings::historyMaxEntries());
 
     m_quickScanPaths->setPaths(Settings::quickScanPaths());
+    m_quickScanSystemAreas->setChecked(Settings::quickScanSystemAreas());
+    m_scheduleFrequency->setCurrentIndex(m_scheduleFrequency->findData(Settings::scheduleFrequency()));
+    m_scheduleKind->setCurrentIndex(m_scheduleKind->findData(Settings::scheduleKind()));
+    m_scheduleSkipOnBattery->setChecked(Settings::scheduleSkipOnBattery());
     m_excludedPaths->setPaths(Settings::excludedPaths());
     m_scanHidden->setChecked(Settings::scanHidden());
     const int maxFileSize = Settings::maxFileSizeMb();
@@ -369,6 +404,10 @@ void SettingsDialog::loadDefaults()
     m_historyMax->setValue(Settings::Defaults::historyMaxEntries);
 
     m_quickScanPaths->setPaths(Settings::Defaults::quickScanPaths());
+    m_quickScanSystemAreas->setChecked(Settings::Defaults::quickScanSystemAreas);
+    m_scheduleFrequency->setCurrentIndex(m_scheduleFrequency->findData(Settings::Defaults::scheduleFrequency));
+    m_scheduleKind->setCurrentIndex(m_scheduleKind->findData(Settings::Defaults::scheduleKind));
+    m_scheduleSkipOnBattery->setChecked(Settings::Defaults::scheduleSkipOnBattery);
     m_excludedPaths->setPaths({});
     m_scanHidden->setChecked(Settings::Defaults::scanHidden);
     m_limitFileSize->setChecked(Settings::Defaults::maxFileSizeMb > 0);
@@ -396,6 +435,10 @@ void SettingsDialog::apply()
     // Liste par défaut : rien d'enregistré, pour suivre les dossiers du système.
     const QStringList quick = m_quickScanPaths->paths();
     Settings::setQuickScanPaths(quick == Settings::Defaults::quickScanPaths() ? QStringList() : quick);
+    Settings::setQuickScanSystemAreas(m_quickScanSystemAreas->isChecked());
+    Settings::setScheduleFrequency(m_scheduleFrequency->currentData().toInt());
+    Settings::setScheduleKind(m_scheduleKind->currentData().toInt());
+    Settings::setScheduleSkipOnBattery(m_scheduleSkipOnBattery->isChecked());
     Settings::setExcludedPaths(m_excludedPaths->paths());
     Settings::setScanHidden(m_scanHidden->isChecked());
     Settings::setMaxFileSizeMb(m_limitFileSize->isChecked() ? m_maxFileSize->value() : 0);
@@ -439,9 +482,12 @@ void SettingsDialog::watchChanges()
         updateDependentWidgets();
         setModified(true);
     };
-    for (QCheckBox *box : {m_autostart, m_closeToTray, m_scanHidden, m_limitFileSize, m_usbAutoScan, m_usbNotify,
-                           m_notifyScanFinished, m_notifyRealtime, m_notifyClamdLost, m_notifySignatures})
+    for (QCheckBox *box : {m_autostart, m_closeToTray, m_quickScanSystemAreas, m_scheduleSkipOnBattery, m_scanHidden,
+                           m_limitFileSize, m_usbAutoScan, m_usbNotify, m_notifyScanFinished, m_notifyRealtime,
+                           m_notifyClamdLost, m_notifySignatures})
         connect(box, &QCheckBox::toggled, this, modified);
+    for (QComboBox *combo : {m_scheduleFrequency, m_scheduleKind})
+        connect(combo, &QComboBox::currentIndexChanged, this, modified);
     for (QSpinBox *spin : {m_historyMax, m_maxFileSize, m_checkInterval, m_signaturesMaxAge})
         connect(spin, &QSpinBox::valueChanged, this, modified);
     for (PathListEdit *list : {m_quickScanPaths, m_excludedPaths})
@@ -453,6 +499,9 @@ void SettingsDialog::updateDependentWidgets()
 {
     m_usbNotify->setEnabled(m_usbAutoScan->isChecked());
     m_maxFileSize->setEnabled(m_limitFileSize->isChecked());
+    const bool scheduled = m_scheduleFrequency->currentData().toInt() != int(ScanSchedule::Frequency::Never);
+    m_scheduleKind->setEnabled(scheduled);
+    m_scheduleSkipOnBattery->setEnabled(scheduled);
 }
 
 void SettingsDialog::testConnection()

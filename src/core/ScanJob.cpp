@@ -12,6 +12,7 @@
 #include <QLocale>
 #include <QLocalSocket>
 #include <QQueue>
+#include <QSet>
 #include <QThread>
 
 #include <algorithm>
@@ -60,6 +61,13 @@ ScanOptions canonicalOptions(ScanOptions options)
     }
     excluded.removeDuplicates();
     options.excludedPaths = excluded;
+    QStringList shared;
+    for (const QString &path : std::as_const(options.sharedDirectories)) {
+        const QString canonical = QFileInfo(path).canonicalFilePath();
+        if (!canonical.isEmpty())
+            shared << canonical;
+    }
+    options.sharedDirectories = shared;
     return options;
 }
 
@@ -125,8 +133,23 @@ ScanJob::ScanJob(const QString &socketPath, const QStringList &paths, const Scan
     : QObject(parent)
     , m_socketPath(socketPath)
     , m_paths(paths)
+    , m_roots(paths)
     , m_options(canonicalOptions(options))
 {
+    // Emplacements sensibles, sauf ceux que les chemins demandés contiennent
+    // déjà (analyse rapide du dossier personnel, faute de dossiers XDG).
+    if (m_options.systemAreas) {
+        QStringList requested;
+        for (const QString &path : paths)
+            requested << QFileInfo(path).canonicalFilePath();
+        for (const QString &area : std::as_const(m_options.systemAreaPaths)) {
+            if (std::none_of(requested.cbegin(), requested.cend(),
+                             [&area](const QString &path) { return !path.isEmpty() && isInside(area, path); }))
+                m_roots << area;
+        }
+    }
+    for (const QString &root : std::as_const(m_roots))
+        m_canonicalRoots << QFileInfo(root).canonicalFilePath();
 }
 
 ScanJob::~ScanJob()
@@ -204,10 +227,57 @@ QString ScanJob::unscannedSizeText(qint64 limit)
         .arg(QLocale().toString(double(limit) / (1024 * 1024), 'g', 4));
 }
 
+QStringList ScanJob::systemAreaPaths(const QString &home)
+{
+    const QDir homeDir(home);
+    QStringList candidates;
+    for (const char *path : {".config/autostart", ".config/systemd/user", ".local/bin", ".local/share/applications",
+                             ".bashrc", ".bash_profile", ".bash_login", ".profile", ".zshrc", ".zprofile",
+                             ".zshenv", ".xprofile", ".xsession", ".xinitrc"})
+        candidates << homeDir.filePath(QString::fromLatin1(path));
+    candidates << QStringLiteral("/tmp") << QStringLiteral("/var/tmp") << QStringLiteral("/dev/shm");
+
+    QStringList paths;
+    for (const QString &candidate : std::as_const(candidates)) {
+        const QString canonical = QFileInfo(candidate).canonicalFilePath(); // vide s'il n'existe pas
+        if (!canonical.isEmpty() && !paths.contains(canonical))
+            paths << canonical;
+    }
+    return paths;
+}
+
+QStringList ScanJob::runningExecutables()
+{
+    QStringList executables;
+    QSet<QPair<quint64, quint64>> seen; // (périphérique, inode) : un programme lancé 20 fois, analysé une fois
+    const uid_t uid = ::getuid();
+    QDirIterator it(QStringLiteral("/proc"), QDir::Dirs | QDir::NoDotAndDotDot);
+    while (it.hasNext()) {
+        const QString process = it.next();
+        bool isPid = false;
+        it.fileName().toLongLong(&isPid);
+        struct stat info;
+        if (!isPid || ::stat(QFile::encodeName(process).constData(), &info) != 0 || info.st_uid != uid)
+            continue;
+        // Processus du noyau (pas d'exécutable), ou protégé (non « dumpable » :
+        // gpg-agent, ssh-agent...) : stat() échoue, rien à analyser.
+        const QString exe = process + QStringLiteral("/exe");
+        if (::stat(QFile::encodeName(exe).constData(), &info) != 0 || !S_ISREG(info.st_mode))
+            continue;
+        const QPair<quint64, quint64> id{quint64(info.st_dev), quint64(info.st_ino)};
+        if (seen.contains(id))
+            continue;
+        seen.insert(id);
+        executables << exe;
+    }
+    return executables;
+}
+
 void ScanJob::run()
 {
     ScanSummary summary;
     summary.paths = m_paths;
+    summary.systemAreas = m_options.systemAreas;
     summary.started = QDateTime::currentDateTime();
     QElapsedTimer duration;
     duration.start();
@@ -231,11 +301,12 @@ void ScanJob::run()
         return;
     }
 
-    // 2. Comptage des fichiers.
-    qint64 total = 0;
+    // 2. Comptage des fichiers (et des programmes en cours, pour l'analyse rapide).
+    const QStringList executables = m_options.systemAreas ? runningExecutables() : QStringList();
+    qint64 total = executables.size();
     QElapsedTimer sinceSignal;
     sinceSignal.start();
-    for (const QString &root : m_paths) {
+    for (const QString &root : std::as_const(m_roots)) {
         walk(root, [&](const QString &) {
             ++total;
             if (sinceSignal.hasExpired(kFlushInterval)) {
@@ -296,9 +367,23 @@ void ScanJob::run()
         return true;
     };
 
-    for (const QString &root : m_paths) {
-        if (!walk(root, onFile, onError, &summary.skipped))
+    bool stopped = false;
+    for (const QString &root : std::as_const(m_roots)) {
+        if (!walk(root, onFile, onError, &summary.skipped)) {
+            stopped = true;
             break;
+        }
+    }
+    for (const QString &executable : executables) {
+        if (stopped || m_cancelled)
+            break;
+        std::optional<ScanResult> result = scanExecutable(executable, &summary.fatalError);
+        if (m_cancelled || !summary.fatalError.isEmpty())
+            break;
+        if (!result)
+            continue; // processus terminé entre-temps
+        ++summary.scanned;
+        add(std::move(*result));
     }
 
     flush();
@@ -317,12 +402,25 @@ bool ScanJob::walk(const QString &root, const FileVisitor &onFile, const ErrorVi
     if (!rootInfo.isDir())
         return onFile(start);
 
+    // Dossier partagé entre utilisateurs (/tmp...) : les fichiers et dossiers
+    // des autres sont ignorés, sans erreur (ils sont en général illisibles).
+    const bool shared = std::any_of(m_options.sharedDirectories.cbegin(), m_options.sharedDirectories.cend(),
+                                    [&start](const QString &directory) { return isInside(start, directory); });
+    const uint uid = ::getuid();
+
     // Exclusions qui contiennent le dossier choisi : l'utilisateur a demandé
     // explicitement ce dossier, elles ne s'appliquent pas à son contenu.
     QStringList excluded;
     for (const QString &path : m_options.excludedPaths) {
         if (!isInside(start, path))
             excluded << path;
+    }
+    // Autres chemins à analyser contenus dans celui-ci (dossier et
+    // sous-dossier choisis ensemble, dossier personnel dans /tmp...) : ils
+    // ont leur propre parcours, chaque fichier n'est analysé qu'une fois.
+    for (const QString &root : std::as_const(m_canonicalRoots)) {
+        if (!root.isEmpty() && root != start && isInside(root, start))
+            excluded << root;
     }
     const auto isExcluded = [&excluded](const QString &path) {
         return std::any_of(excluded.cbegin(), excluded.cend(),
@@ -353,6 +451,8 @@ bool ScanJob::walk(const QString &root, const FileVisitor &onFile, const ErrorVi
             if (info.isSymLink())
                 continue; // jamais suivis : évite les boucles et les sorties du dossier
             if (isExcluded(path))
+                continue;
+            if (shared && info.ownerId() != uid)
                 continue;
             if (info.isDir()) {
                 if (!excludedDirectories().contains(path))
@@ -387,6 +487,28 @@ ScanResult ScanJob::scanFile(const QString &path, QString *fatalError)
     }
     const FileDescriptorGuard guard{fd};
 
+    return scanDescriptor(fd, path, fatalError);
+}
+
+std::optional<ScanResult> ScanJob::scanExecutable(const QString &procExe, QString *fatalError)
+{
+    // Pas d'O_NOFOLLOW : /proc/<pid>/exe est un lien « magique » à suivre, qui
+    // mène au fichier même s'il a été supprimé ou remplacé depuis le lancement.
+    const int fd = ::open(QFile::encodeName(procExe).constData(), O_RDONLY | O_CLOEXEC | O_NOCTTY | O_NONBLOCK);
+    if (fd < 0)
+        return std::nullopt;
+    const FileDescriptorGuard guard{fd};
+
+    // Chemin affiché : celui du programme, suivi de « (deleted) » s'il n'est plus sur le disque.
+    char target[4096];
+    const ssize_t length = ::readlink(QFile::encodeName(procExe).constData(), target, sizeof(target) - 1);
+    const QString path = length > 0 ? QFile::decodeName(QByteArray(target, int(length))) : procExe;
+    return scanDescriptor(fd, path, fatalError);
+}
+
+ScanResult ScanJob::scanDescriptor(int fd, const QString &path, QString *fatalError)
+{
+    ScanResult result{path, ScanResult::Status::Error, {}};
     struct stat info;
     if (::fstat(fd, &info) != 0 || !S_ISREG(info.st_mode)) {
         result.detail = tr("Pas un fichier ordinaire");

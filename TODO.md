@@ -48,15 +48,15 @@ analysé, ni comme « menace » ce qui n'est qu'un soupçon.
 
 ## 4. Analyse rapide renforcée et analyses planifiées
 
-- [ ] Analyse rapide : en plus des dossiers choisis, les emplacements où un programme
+- [x] Analyse rapide : en plus des dossiers choisis, les emplacements où un programme
       malveillant s'installe (démarrage automatique, services utilisateur, `~/.local/bin`,
       scripts du shell, `/tmp`, `/var/tmp`, `/dev/shm`) et les **programmes en cours
       d'exécution** (y compris ceux dont le fichier a été supprimé du disque)
-- [ ] Dossiers partagés (`/tmp`...) : seuls les fichiers de l'utilisateur, sans erreur pour
+- [x] Dossiers partagés (`/tmp`...) : seuls les fichiers de l'utilisateur, sans erreur pour
       ceux des autres
-- [ ] Analyses planifiées : quotidienne ou hebdomadaire, rapide ou complète, rattrapée au
+- [x] Analyses planifiées : quotidienne ou hebdomadaire, rapide ou complète, rattrapée au
       lancement si elle a été manquée, reportée sur batterie
-- [ ] Tests
+- [x] Tests
 
 ## 5. Quarantaine
 

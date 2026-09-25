@@ -23,6 +23,7 @@ public:
         Usb,    // lancé automatiquement au branchement d'une clé USB
         Quick,  // analyse rapide : dossiers des paramètres (Téléchargements...)
         Full,   // analyse complète : dossier personnel
+        Scheduled, // analyse planifiée (rapide ou complète, voir ScanSchedule)
     };
     Q_ENUM(Origin)
 
@@ -32,9 +33,17 @@ public:
     // Options des scans suivants (le scan en cours garde les siennes).
     void setOptions(const ScanOptions &options);
     ScanOptions options() const;
+    // Analyse rapide : dossiers, et emplacements sensibles avec les programmes
+    // en cours (ScanOptions::systemAreas).
+    void setQuickScan(const QStringList &paths, bool systemAreas);
+    QStringList quickScanPaths() const;
+    bool quickScanSystemAreas() const;
 
     // Lance un scan, ou le met en file d'attente si un scan est déjà en cours.
-    void scan(const QStringList &paths, Origin origin);
+    // `systemAreas` : voir ScanOptions::systemAreas.
+    void scan(const QStringList &paths, Origin origin, bool systemAreas = false);
+    // Analyse rapide (depuis la fenêtre, l'icône, --quick-scan, ou planifiée).
+    void quickScan(Origin origin = Origin::Quick);
     // Arrête le scan en cours et vide la file d'attente.
     void cancelAll();
 
@@ -54,12 +63,15 @@ private:
     {
         QStringList paths;
         Origin origin;
+        bool systemAreas;
     };
 
     void startNext();
 
     ClamdClient *m_client;
     ScanOptions m_options;
+    QStringList m_quickPaths;
+    bool m_quickSystemAreas = false;
     QList<Request> m_queue;
     ScanJob *m_job = nullptr;
     Origin m_origin = Origin::Manual;

@@ -56,7 +56,7 @@ HistoryPanel::HistoryPanel(ScanHistory *history, QWidget *parent)
                                + 4 * charWidth);
     int typeWidth = 0;
     for (const auto origin : {ScanManager::Origin::Manual, ScanManager::Origin::Usb, ScanManager::Origin::Quick,
-                              ScanManager::Origin::Full})
+                              ScanManager::Origin::Full, ScanManager::Origin::Scheduled})
         typeWidth = qMax(typeWidth, metrics.horizontalAdvance(StatusDisplay::originText(origin)));
     columns->resizeSection(HistoryModel::TypeColumn, typeWidth + 3 * charWidth);
     for (const int column : {HistoryModel::ScannedColumn, HistoryModel::ThreatsColumn, HistoryModel::WarningsColumn,
@@ -158,8 +158,11 @@ void HistoryPanel::showDetails()
                                 .arg(StatusDisplay::originText(record.origin),
                                      QLocale().toString(record.started.date(), QLocale::LongFormat),
                                      QLocale().toString(record.started.time(), QLocale::ShortFormat)));
+    QString target = record.paths.join(QStringLiteral(", "));
+    if (record.systemAreas)
+        target += tr(", plus démarrage automatique, fichiers temporaires et programmes en cours");
     m_detailsText->setText(tr("%1\nCible : %2\nDurée : %3")
-                               .arg(StatusDisplay::summaryText(summary), record.paths.join(QStringLiteral(", ")),
+                               .arg(StatusDisplay::summaryText(summary), target,
                                     StatusDisplay::durationText(record.elapsedMsecs)));
 
     // Menaces, puis fichiers suspects et non analysés.

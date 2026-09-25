@@ -5,6 +5,7 @@
 #include "core/ScanHistory.h"
 #include "core/Settings.h"
 #include "system/OnAccessController.h"
+#include "system/ScanSchedule.h"
 
 #include <QCommandLinkButton>
 #include <QDir>
@@ -469,6 +470,17 @@ void DashboardPage::updateTiles()
         setTile(m_lastScanTile, StatusDisplay::levelIcon(StatusDisplay::Level::Neutral), tr("Jamais"),
                 tr("Lancez une analyse rapide pour vérifier vos derniers fichiers."));
     }
+    // Analyse planifiée : quand aura lieu la prochaine.
+    const auto frequency = ScanSchedule::Frequency(Settings::scheduleFrequency());
+    const QDateTime now = QDateTime::currentDateTime();
+    const QDateTime next = ScanSchedule::nextRun(Settings::scheduleLastRun(), now, frequency);
+    if (next.isValid()) {
+        const QString when = next <= now ? tr("dès que possible")
+                                         : tr("%1 à %2").arg(QLocale().toString(next.date(), QLocale::ShortFormat),
+                                                             QLocale().toString(next.time(), QLocale::ShortFormat));
+        m_lastScanTile.detail->setText(m_lastScanTile.detail->text() + QLatin1Char('\n')
+                                       + tr("Prochaine analyse planifiée : %1").arg(when));
+    }
 
     // Clés USB.
     const bool usb = Settings::usbAutoScan();
@@ -513,7 +525,7 @@ void DashboardPage::updateScanCard()
                                  : tr("%1 en cours : %2").arg(StatusDisplay::originText(origin), target));
     }
 
-    m_quickButton->setDescription(StatusDisplay::targetText(ScanManager::Origin::Quick, Settings::quickScanPaths()));
+    m_quickButton->setDescription(StatusDisplay::quickScanText(m_scans->quickScanPaths(), m_scans->quickScanSystemAreas()));
     for (QCommandLinkButton *button : {m_quickButton, m_fullButton, m_folderButton, m_filesButton})
         button->setEnabled(!scanning);
 }

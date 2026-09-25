@@ -199,14 +199,55 @@ l'instance déjà lancée, pour que sa fenêtre puisse prendre le focus.
 ### Analyses
 
 - **Analyse rapide** : les dossiers où arrivent les nouveaux fichiers, par défaut Téléchargements,
-  Bureau et Documents (modifiables dans les paramètres) ;
+  Bureau et Documents (modifiables dans les paramètres), plus les emplacements sensibles et les
+  programmes en cours (voir ci-dessous) ;
 - **Analyse complète** : tout le dossier personnel ;
-- **Dossier…** et **Fichiers…** : ce que vous choisissez.
+- **Dossier…** et **Fichiers…** : ce que vous choisissez ;
+- **Analyse planifiée** : rapide ou complète, chaque jour ou chaque semaine (voir ci-dessous).
 
 Les dossiers sont parcourus récursivement ; les liens symboliques ne sont pas suivis, et `/proc`,
-`/sys` et `/dev` sont ignorés, ainsi que les exclusions des paramètres. Chaque fichier est ouvert
-par l'application avec vos droits, puis transmis à clamd (comme `clamdscan --fdpass`) : clamd peut
+`/sys` et `/dev` sont ignorés, ainsi que les exclusions des paramètres. Un fichier n'est analysé
+qu'une fois, même si plusieurs des chemins choisis le contiennent. Chaque fichier est ouvert par
+l'application avec vos droits, puis transmis à clamd (comme `clamdscan --fdpass`) : clamd peut
 donc analyser votre dossier personnel et vos clés USB sans avoir le droit de les lire lui-même.
+
+#### Emplacements sensibles et programmes en cours
+
+Par défaut, l'analyse rapide vérifie aussi, en quelques secondes, là où un programme malveillant
+s'installe pour se relancer ou dépose ses fichiers (seulement ceux qui existent) :
+
+- démarrage automatique : `~/.config/autostart`, services systemd de l'utilisateur
+  (`~/.config/systemd/user`) ;
+- programmes et raccourcis de l'utilisateur : `~/.local/bin`, `~/.local/share/applications` ;
+- scripts de démarrage du shell et de la session : `~/.bashrc`, `~/.bash_profile`, `~/.profile`,
+  `~/.zshrc`, `~/.xprofile`... ;
+- fichiers temporaires : `/tmp`, `/var/tmp`, `/dev/shm`. Ces dossiers sont partagés entre les
+  utilisateurs : seuls vos fichiers y sont analysés, ceux des autres (illisibles) sont ignorés
+  sans erreur. C'est vrai aussi quand vous analysez vous-même un de ces dossiers ;
+- **le programme de chaque processus en cours** qui vous appartient, lu par `/proc/<pid>/exe` :
+  même s'il a été supprimé du disque après son lancement (technique courante des programmes
+  malveillants), il reste analysable, et son chemin s'affiche suivi de `(deleted)`. Un programme
+  lancé plusieurs fois n'est analysé qu'une fois ; les processus protégés (`gpg-agent`,
+  `ssh-agent`...) sont ignorés.
+
+Réglage : Paramètres → Analyse → « Analyser aussi les emplacements sensibles et les programmes en
+cours ».
+
+#### Analyses planifiées
+
+Paramètres → Analyse → « Analyse planifiée » : fréquence (jamais, chaque jour, chaque semaine),
+analyse rapide ou complète, et report tant que l'ordinateur est sur batterie (UPower). Pas d'heure
+fixe : Linux Defender, qui tourne en arrière-plan (lancement à l'ouverture de la session
+conseillé), vérifie tous les quarts d'heure si une analyse est due, à partir de 5 minutes après
+son lancement pour ne pas ralentir l'ouverture de la session. Une analyse manquée (ordinateur
+éteint) est donc faite dès que possible. Elle attend aussi la fin d'une autre analyse et que clamd
+réponde.
+
+Une analyse est due 23 heures après la précédente (chaque jour) ou 7 jours moins une heure (chaque
+semaine). Arrêtée par l'utilisateur, elle compte comme faite ; si elle échoue (clamd perdu), elle
+reste due. La tuile « Dernière analyse » de l'accueil indique la prochaine. Son bilan est notifié
+comme celui d'une analyse lancée à la main, et enregistré dans l'historique (« Analyse
+planifiée »).
 
 Chaque fichier reçoit l'un de ces statuts :
 
@@ -312,6 +353,8 @@ automatique).
 | | Garder l'application dans la zone de notification quand la fenêtre est fermée (sinon, fermer quitte) | oui |
 | | Nombre d'analyses conservées dans l'historique (0 : historique désactivé) | 100 |
 | Analyse | Dossiers de l'analyse rapide | Téléchargements, Bureau, Documents |
+| | Analyse rapide : aussi les emplacements sensibles et les programmes en cours | oui |
+| | Analyse planifiée : fréquence, rapide ou complète, report sur batterie | jamais ; rapide ; oui |
 | | Exclusions : dossiers et fichiers ignorés quand ils sont dans un dossier analysé | aucune |
 | | Analyser les fichiers et dossiers cachés | oui |
 | | Ignorer les fichiers de plus de N Mo (comptés à part dans le bilan) | non |
@@ -659,6 +702,7 @@ linux-defender/
 │   │   ├── UsbMonitor.*      # montage des clés USB (UDisks2 via D-Bus)
 │   │   ├── SingleInstance.*  # une seule instance à la fois
 │   │   ├── PrivilegedHelper.*   # corrections en root : programme d'aide lancé par pkexec
+│   │   ├── ScanSchedule.*    # analyses planifiées (chaque jour, chaque semaine)
 │   │   ├── SystemDiagnostics.*  # diagnostic de l'installation (évaluation pure + relevé du système)
 │   │   ├── Autostart.*       # démarrage automatique (~/.config/autostart)
 │   │   ├── DesktopNotifier.* # notifications du bureau (org.freedesktop.Notifications)
@@ -708,7 +752,9 @@ linux-defender/
       **version 1.0.2** ; case d'activation dans la page, avec le diagnostic
 - [x] Interface : tableau de bord, historique des analyses, analyse rapide et complète,
       exclusions, paramètres en pages
-- [ ] Plus tard : quarantaine, planification, scans en parallèle, son des alertes
+- [x] Diagnostic et corrections en un clic, menu de Dolphin, analyse rapide renforcée
+      (emplacements sensibles, programmes en cours), analyses planifiées
+- [ ] Plus tard : quarantaine, scans en parallèle, son des alertes
 
 Le détail des travaux en cours et à venir est dans [TODO.md](TODO.md).
 

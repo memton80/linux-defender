@@ -7,11 +7,13 @@
 #include <QDir>
 #include <QEventLoop>
 #include <QFileInfo>
+#include <QProcess>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
 
+#include <algorithm>
 #include <memory>
 
 #include <sys/stat.h>
@@ -96,6 +98,11 @@ private slots:
     void skipsLargeFiles();
     void classifiesDetections();
     void reportsFilesAboveClamdLimit();
+    void scansOverlappingPathsOnce();
+    void systemAreaPaths();
+    void scansSystemAreasAndPrograms();
+    void findsDeletedRunningProgram();
+    void skipsOthersFilesInSharedFolders();
     void managerQueuesScans();
     void managerAppliesOptions();
     void parseReply_data();
@@ -395,6 +402,141 @@ void TestScanJob::reportsFilesAboveClamdLimit()
 
     // Limite technique du moteur (2 Go) : texte propre, sans MaxFileSize.
     QVERIFY(!ScanJob::unscannedSizeText(ClamdConfig::kEngineMaxFileSize).contains(QLatin1String("MaxFileSize")));
+}
+
+void TestScanJob::scansOverlappingPathsOnce()
+{
+    FakeClamd clamd(socketPath(), QByteArrayLiteral("PONG\0"));
+    writeFile(m_root + QStringLiteral("/a.txt"), "x");
+    writeFile(m_root + QStringLiteral("/sous/b.txt"), "x");
+    writeFile(m_root + QStringLiteral("/sous/c.txt"), "x");
+
+    // Dossier et sous-dossier, fichier déjà dans le dossier : 3 fichiers, 3 analyses.
+    ScanJob job(socketPath(), {m_root + QStringLiteral("/sous"), m_root, m_root + QStringLiteral("/a.txt")});
+    const Run run = runJob(job);
+    QCOMPARE(run.summary.scanned, qint64(3));
+    QCOMPARE(clamd.filesScanned(), 3);
+    QCOMPARE(run.lastTotal, qint64(3));
+}
+
+void TestScanJob::systemAreaPaths()
+{
+    const QString home = m_root + QStringLiteral("/home");
+    writeFile(home + QStringLiteral("/.bashrc"), "alias ll='ls -l'");
+    writeFile(home + QStringLiteral("/.config/autostart/agent.desktop"), "[Desktop Entry]");
+    writeFile(home + QStringLiteral("/.local/bin/outil"), "#!/bin/sh");
+    const QStringList paths = ScanJob::systemAreaPaths(home);
+
+    QVERIFY(paths.contains(home + QStringLiteral("/.bashrc")));
+    QVERIFY(paths.contains(home + QStringLiteral("/.config/autostart")));
+    QVERIFY(paths.contains(home + QStringLiteral("/.local/bin")));
+    // Absents : pas dans la liste.
+    QVERIFY(!paths.contains(home + QStringLiteral("/.zshrc")));
+    QVERIFY(!paths.contains(home + QStringLiteral("/.config/systemd/user")));
+    // /tmp existe partout.
+    QVERIFY(paths.contains(QFileInfo(QStringLiteral("/tmp")).canonicalFilePath()));
+}
+
+void TestScanJob::scansSystemAreasAndPrograms()
+{
+    FakeClamd clamd(socketPath(), QByteArrayLiteral("PONG\0"));
+    const QString folder = m_root + QStringLiteral("/Téléchargements");
+    const QString area = m_root + QStringLiteral("/autostart");
+    writeFile(folder + QStringLiteral("/doc.txt"), "x");
+    writeFile(area + QStringLiteral("/agent.desktop"), FakeClamd::kVirusMarker);
+
+    ScanOptions options;
+    options.systemAreas = true;
+    // Emplacement contenu dans un dossier demandé : pas analysé deux fois.
+    options.systemAreaPaths = {area, folder + QStringLiteral("/doc.txt")};
+    ScanJob job(socketPath(), {folder}, options);
+    const Run run = runJob(job);
+
+    QVERIFY2(run.summary.fatalError.isEmpty(), qPrintable(run.summary.fatalError));
+    QVERIFY(run.summary.systemAreas);
+    QCOMPARE(run.summary.paths, QStringList{folder}); // cible affichée : les dossiers demandés
+    QCOMPARE(int(find(run, area + QStringLiteral("/agent.desktop")).status), int(ScanResult::Status::Infected));
+    int docCount = 0;
+    for (const ScanResult &result : run.results)
+        docCount += result.path == folder + QStringLiteral("/doc.txt") ? 1 : 0;
+    QCOMPARE(docCount, 1);
+
+    // Programmes en cours : ce test en fait partie, analysé une seule fois
+    // (il contient les marqueurs du faux clamd : son statut importe peu).
+    const QString self = QFileInfo(QCoreApplication::applicationFilePath()).canonicalFilePath();
+    int selfCount = 0;
+    for (const ScanResult &result : run.results)
+        selfCount += result.path == self ? 1 : 0;
+    QCOMPARE(selfCount, 1);
+    QVERIFY(ScanJob::runningExecutables().contains(QStringLiteral("/proc/%1/exe").arg(QCoreApplication::applicationPid())));
+    // Progression cohérente : programmes compris dans le total.
+    QCOMPARE(run.lastDone, run.lastTotal);
+    QCOMPARE(run.summary.scanned, qint64(run.results.size()));
+}
+
+void TestScanJob::findsDeletedRunningProgram()
+{
+    // Un programme lancé puis supprimé du disque (technique courante des
+    // programmes malveillants) reste analysable par /proc/<pid>/exe.
+    FakeClamd clamd(socketPath(), QByteArrayLiteral("PONG\0"));
+    const QString program = m_root + QStringLiteral("/programme");
+    QVERIFY(QFile::copy(QStringLiteral("/bin/sleep"), program));
+    // Marqueur ajouté à la fin : le programme reste exécutable, et « infecté » pour le faux clamd.
+    {
+        QFile file(program);
+        QVERIFY(file.open(QIODevice::Append));
+        file.write(FakeClamd::kVirusMarker);
+    }
+    QVERIFY(QFile::setPermissions(program, QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+    QProcess process;
+    process.start(program, {QStringLiteral("30")});
+    QVERIFY(process.waitForStarted());
+    QVERIFY(QFile::remove(program));
+
+    ScanOptions options;
+    options.systemAreas = true;
+    ScanJob job(socketPath(), {m_root}, options);
+    const Run run = runJob(job);
+    process.kill();
+    process.waitForFinished();
+
+    const ScanResult deleted = find(run, program + QStringLiteral(" (deleted)"));
+    QCOMPARE(int(deleted.status), int(ScanResult::Status::Infected));
+    QVERIFY(std::any_of(run.summary.threats.cbegin(), run.summary.threats.cend(),
+                        [&](const ScanResult &threat) { return threat.path == deleted.path; }));
+}
+
+void TestScanJob::skipsOthersFilesInSharedFolders()
+{
+    FakeClamd clamd(socketPath(), QByteArrayLiteral("PONG\0"));
+    const QString shared = m_root + QStringLiteral("/tmp");
+    writeFile(shared + QStringLiteral("/a-moi.txt"), FakeClamd::kVirusMarker);
+    ScanOptions options;
+    options.sharedDirectories = {shared};
+
+    if (isRoot()) {
+        // Fichiers et dossiers d'un autre utilisateur (nobody) : ignorés, sans erreur.
+        writeFile(shared + QStringLiteral("/autre/secret.txt"), FakeClamd::kVirusMarker);
+        writeFile(shared + QStringLiteral("/autre.txt"), FakeClamd::kVirusMarker);
+        for (const char *path : {"/autre", "/autre/secret.txt", "/autre.txt"})
+            QCOMPARE(::chown(QFile::encodeName(shared + QLatin1String(path)).constData(), 65534, 65534), 0);
+        QVERIFY(QFile::setPermissions(shared + QStringLiteral("/autre"), QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+    }
+
+    ScanJob job(socketPath(), {shared}, options);
+    const Run run = runJob(job);
+    QCOMPARE(run.summary.errors, qint64(0));
+    QCOMPARE(run.summary.scanned, qint64(1));
+    QCOMPARE(run.results.first().path, shared + QStringLiteral("/a-moi.txt"));
+
+    // Hors d'un dossier partagé, les mêmes fichiers sont bien analysés (le
+    // dossier temporaire du test est lui-même dans /tmp : liste vidée).
+    if (isRoot()) {
+        ScanOptions notShared;
+        notShared.sharedDirectories.clear();
+        ScanJob normalJob(socketPath(), {shared}, notShared);
+        QCOMPARE(runJob(normalJob).summary.scanned, qint64(3));
+    }
 }
 
 void TestScanJob::managerQueuesScans()

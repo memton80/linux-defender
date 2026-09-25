@@ -19,7 +19,28 @@ ScanOptions ScanManager::options() const
     return m_options;
 }
 
-void ScanManager::scan(const QStringList &paths, Origin origin)
+void ScanManager::setQuickScan(const QStringList &paths, bool systemAreas)
+{
+    m_quickPaths = paths;
+    m_quickSystemAreas = systemAreas;
+}
+
+QStringList ScanManager::quickScanPaths() const
+{
+    return m_quickPaths;
+}
+
+bool ScanManager::quickScanSystemAreas() const
+{
+    return m_quickSystemAreas;
+}
+
+void ScanManager::quickScan(Origin origin)
+{
+    scan(m_quickPaths, origin, m_quickSystemAreas);
+}
+
+void ScanManager::scan(const QStringList &paths, Origin origin, bool systemAreas)
 {
     if (paths.isEmpty())
         return;
@@ -31,7 +52,7 @@ void ScanManager::scan(const QStringList &paths, Origin origin)
             return;
     }
 
-    m_queue.append({paths, origin});
+    m_queue.append({paths, origin, systemAreas});
     startNext();
 }
 
@@ -66,6 +87,9 @@ void ScanManager::startNext()
     m_origin = request.origin;
     // Limite de taille de clamd relue à chaque analyse : sa configuration a pu changer.
     ScanOptions options = m_options;
+    options.systemAreas = request.systemAreas;
+    if (request.systemAreas)
+        options.systemAreaPaths = ScanJob::systemAreaPaths();
     options.clamdUnscannedAbove = ClamdConfig::forSocket(m_client->socketPath()).unscannedAbove();
     m_job = new ScanJob(m_client->socketPath(), request.paths, options, this);
 

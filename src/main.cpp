@@ -5,6 +5,7 @@
 #include "core/Settings.h"
 #include "system/OnAccessController.h"
 #include "system/PrivilegedHelper.h"
+#include "system/ScanSchedule.h"
 #include "system/SingleInstance.h"
 #include "system/SystemDiagnostics.h"
 #include "system/UsbMonitor.h"
@@ -96,13 +97,17 @@ int main(int argc, char *argv[])
     ClamdWatcher watcher(&client);
     ScanManager scans(&client);
     ScanHistory history;
+    ScanSchedule schedule(&scans, &watcher);
     // Réglages pris en compte au lancement, puis à chaque modification.
     const QString socketFromCommandLine = parser.value(socketOption);
     const auto applySettings = [&] {
         client.setSocketPath(!socketFromCommandLine.isEmpty() ? socketFromCommandLine : Settings::effectiveSocketPath());
         watcher.setInterval(Settings::checkInterval() * 1000);
         scans.setOptions(Settings::scanOptions());
+        scans.setQuickScan(Settings::quickScanPaths(), Settings::quickScanSystemAreas());
         history.setMaxRecords(Settings::historyMaxEntries());
+        schedule.setSchedule(ScanSchedule::Frequency(Settings::scheduleFrequency()),
+                             ScanSchedule::Kind(Settings::scheduleKind()), Settings::scheduleSkipOnBattery());
     };
     applySettings();
 
@@ -189,5 +194,6 @@ int main(int argc, char *argv[])
     onAccess.refresh();
     onAccess.startMonitoring();
     diagnostics.refresh();
+    schedule.start();
     return app.exec();
 }

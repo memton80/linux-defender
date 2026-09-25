@@ -2,6 +2,7 @@
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QDir>
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -41,6 +42,7 @@ struct ScanSummary
     static constexpr int kMaxThreats = 100;
 
     QStringList paths;  // fichiers ou dossiers demandés
+    bool systemAreas = false; // plus les emplacements sensibles et les programmes en cours (ScanOptions)
     QDateTime started;  // début du scan
     qint64 elapsedMsecs = 0;
     qint64 scanned = 0; // fichiers traités, quel que soit leur statut
@@ -67,11 +69,21 @@ struct ScanOptions
     // (voir ClamdConfig::unscannedAbove()) ; 0 = inconnue. Un tel fichier est
     // signalé « non analysé », jamais « sain ».
     qint64 clamdUnscannedAbove = 0;
+    // Analyse rapide : en plus des chemins demandés, les emplacements où un
+    // programme malveillant s'installe (systemAreaPaths) et les programmes en
+    // cours d'exécution de l'utilisateur.
+    bool systemAreas = false;
+    QStringList systemAreaPaths; // ScanManager y met ScanJob::systemAreaPaths()
+    // Dossiers partagés entre utilisateurs : on n'y analyse que les fichiers
+    // de l'utilisateur, sans erreur pour ceux des autres (illisibles).
+    QStringList sharedDirectories = {QStringLiteral("/tmp"), QStringLiteral("/var/tmp"), QStringLiteral("/dev/shm")};
 
     bool operator==(const ScanOptions &other) const
     {
         return excludedPaths == other.excludedPaths && scanHidden == other.scanHidden
-            && maxFileSize == other.maxFileSize && clamdUnscannedAbove == other.clamdUnscannedAbove;
+            && maxFileSize == other.maxFileSize && clamdUnscannedAbove == other.clamdUnscannedAbove
+            && systemAreas == other.systemAreas && systemAreaPaths == other.systemAreaPaths
+            && sharedDirectories == other.sharedDirectories;
     }
     bool operator!=(const ScanOptions &other) const { return !(*this == other); }
 };
@@ -93,9 +105,15 @@ struct ScanOptions
  * Déroulement :
  *   1. PING : clamd répond-il ? Sinon, inutile de parcourir le dossier.
  *   2. Comptage des fichiers, pour afficher une vraie progression.
- *   3. Scan des fichiers, un par un.
+ *   3. Scan des fichiers, un par un, puis (analyse rapide) des programmes en cours.
  * Les liens symboliques ne sont pas suivis ; /proc, /sys et /dev sont ignorés,
  * ainsi que ce qu'exclut ScanOptions.
+ *
+ * Programmes en cours (ScanOptions::systemAreas) : le fichier exécutable de
+ * chaque processus de l'utilisateur est ouvert par /proc/<pid>/exe, qui reste
+ * lisible même quand le fichier a été supprimé du disque (technique courante
+ * des programmes malveillants : le chemin affiché finit alors par
+ * « (deleted) »). Chaque programme n'est analysé qu'une fois.
  */
 class ScanJob : public QObject
 {
@@ -119,6 +137,16 @@ public:
     static std::optional<ScanResult> parseReply(const QString &path, const QByteArray &reply);
     // Explication d'un fichier « OK » plus gros que la limite de clamd.
     static QString unscannedSizeText(qint64 limit);
+
+    // Emplacements sensibles de l'analyse rapide, ceux qui existent :
+    // démarrage automatique (~/.config/autostart, services utilisateur),
+    // programmes et raccourcis de l'utilisateur (~/.local/bin,
+    // ~/.local/share/applications), scripts de démarrage du shell, fichiers
+    // temporaires (/tmp, /var/tmp, /dev/shm). Chemins canoniques.
+    static QStringList systemAreaPaths(const QString &home = QDir::homePath());
+    // Programmes en cours de l'utilisateur : un /proc/<pid>/exe par fichier
+    // exécutable distinct (processus du noyau et protégés exclus).
+    static QStringList runningExecutables();
 
 signals:
     // Étape 2 : nombre de fichiers trouvés jusqu'ici.
@@ -147,10 +175,17 @@ private:
     // comptés dans `skipped` (s'il n'est pas nul), sans passer par `onFile`.
     bool walk(const QString &root, const FileVisitor &onFile, const ErrorVisitor &onError, qint64 *skipped = nullptr);
     ScanResult scanFile(const QString &path, QString *fatalError);
+    // Programme en cours (/proc/<pid>/exe). std::nullopt si le processus s'est
+    // terminé entre-temps ou n'est pas lisible : il est alors ignoré.
+    std::optional<ScanResult> scanExecutable(const QString &procExe, QString *fatalError);
+    // Transmet un fichier ouvert à clamd ; `path` : chemin affiché.
+    ScanResult scanDescriptor(int fd, const QString &path, QString *fatalError);
     Reply request(const QByteArray &command, int fileDescriptor, int timeoutMsecs);
 
     const QString m_socketPath;
     const QStringList m_paths;
+    QStringList m_roots; // m_paths, plus les emplacements sensibles (analyse rapide)
+    QStringList m_canonicalRoots; // les mêmes, sous forme canonique (chevauchements)
     const ScanOptions m_options; // chemins d'exclusion déjà rendus canoniques
     std::atomic_bool m_cancelled{false};
     QThread *m_thread = nullptr;

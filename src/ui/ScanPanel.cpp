@@ -275,7 +275,7 @@ void ScanPanel::chooseFolder()
 
 void ScanPanel::startQuickScan()
 {
-    m_scans->scan(Settings::quickScanPaths(), ScanManager::Origin::Quick);
+    m_scans->quickScan();
 }
 
 void ScanPanel::startFullScan()
@@ -403,7 +403,8 @@ void ScanPanel::showIdle()
     m_activityTitle->setText(tr("Aucune analyse pour l'instant"));
     m_activityDetail->setText(tr("L'analyse rapide vérifie en quelques instants les dossiers où arrivent les "
                                  "nouveaux fichiers : %1.")
-                                  .arg(StatusDisplay::targetText(ScanManager::Origin::Quick, Settings::quickScanPaths())));
+                                  .arg(StatusDisplay::quickScanText(m_scans->quickScanPaths(),
+                                                                    m_scans->quickScanSystemAreas())));
     const QString none = QStringLiteral("—");
     setStats(none, none, none, none, none);
 }
@@ -473,7 +474,11 @@ void ScanPanel::updateButtons()
     m_fileButton->setEnabled(!scanning);
     m_stopButton->setEnabled(scanning);
     m_exportButton->setEnabled(!scanning && m_model->rowCount() > 0);
-    m_quickButton->setToolTip(tr("Analyse de : %1").arg(Settings::quickScanPaths().join(QStringLiteral(", "))));
+    QString quickTip = tr("Analyse de : %1").arg(m_scans->quickScanPaths().join(QStringLiteral(", ")));
+    if (m_scans->quickScanSystemAreas())
+        quickTip += QLatin1Char('\n') + tr("Et : démarrage automatique, scripts du shell, ~/.local/bin, /tmp, "
+                                           "/var/tmp, /dev/shm, programmes en cours d'exécution");
+    m_quickButton->setToolTip(quickTip);
 }
 
 void ScanPanel::showContextMenu(const QPoint &position)

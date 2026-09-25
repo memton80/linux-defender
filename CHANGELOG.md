@@ -9,6 +9,11 @@ dans le fichier `VERSION` ; avant la 1.0.2, les paquets construits hors tag port
 
 ### Corrigé
 
+- Dossiers partagés (`/tmp`, `/var/tmp`, `/dev/shm`) : les fichiers des autres utilisateurs
+  (illisibles) ne sont plus comptés en erreur.
+- Un fichier contenu dans plusieurs des chemins choisis (dossier et sous-dossier) n'est plus
+  analysé deux fois.
+
 - **Fichiers trop gros pour clamd affichés « sains ».** Au-delà de sa limite `MaxFileSize`
   (100 Mo par défaut, 25 Mo dans la configuration installée par Debian et Ubuntu) ou de 2 Go,
   clamd répond « OK » sans lire le fichier (vérifié avec ClamAV 1.5.4, virus compris). L'application lit maintenant cette limite dans la configuration de
@@ -32,6 +37,13 @@ dans le fichier `VERSION` ; avant la 1.0.2, les paquets construits hors tag port
   locaux, et action **« Analyse rapide »** dans le menu des applications. Options
   `--scan <chemins…>` et `--quick-scan` : l'analyse est transmise à l'instance déjà lancée, avec
   le jeton d'activation Wayland pour que sa fenêtre prenne le focus.
+- **Analyse rapide renforcée** : en plus des dossiers choisis, les emplacements où un programme
+  malveillant s'installe (démarrage automatique, services utilisateur, `~/.local/bin`, scripts du
+  shell, `/tmp`, `/var/tmp`, `/dev/shm`) et le **programme de chaque processus en cours**, lu par
+  `/proc/<pid>/exe`, même supprimé du disque. Réglable dans les paramètres.
+- **Analyses planifiées** : rapide ou complète, chaque jour ou chaque semaine ; une analyse manquée
+  est faite dès que possible, jamais dans les 5 premières minutes de la session, et reportée sur
+  batterie. La tuile « Dernière analyse » indique la prochaine.
 - **Case « Activer la protection en temps réel »** dans la page du même nom.
 - Programme d'aide `/usr/libexec/linux-defender-helper` (paquets `.deb` et `.rpm`), lancé par
   `pkexec` sous l'action polkit `io.github.memton80.linux-defender.manage` : mot de passe

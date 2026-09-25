@@ -44,6 +44,8 @@ QString pathsText(const QStringList &paths);
 QString originText(ScanManager::Origin origin);
 // Cible d'un scan : chemins, ou noms des dossiers d'une analyse rapide.
 QString targetText(ScanManager::Origin origin, const QStringList &paths);
+// Cible d'une analyse rapide : noms des dossiers, et emplacements sensibles si demandés.
+QString quickScanText(const QStringList &paths, bool systemAreas);
 // Niveau et icône du bilan d'un scan (menaces, erreurs, sans problème).
 Level summaryLevel(const ScanSummary &summary);
 
