@@ -115,6 +115,7 @@ private slots:
     void unitObjectPath();
     void notInstalledWithoutBinary();
     void unreadableLogIsReported();
+    void detectionFilter();
     void generatedFilesMatchCode();
 
     // État lu depuis systemd (faux systemd sur un bus de session privé)
@@ -515,6 +516,26 @@ void TestOnAccess::unreadableLogIsReported()
     controller.setSearchDirectories({m_binDir});
     controller.refresh();
     QVERIFY2(controller.message().contains(QStringLiteral("n'est pas lisible")), qPrintable(controller.message()));
+}
+
+void TestOnAccess::detectionFilter()
+{
+    // Fichier que l'application vient de lire pour le mettre en quarantaine :
+    // clamonacc le signale une fois de plus, ce n'est pas une nouvelle menace.
+    const QString logPath = m_dir.filePath(QStringLiteral("filtre.log"));
+    writeFile(logPath, "");
+    OnAccessController controller(QDBusConnection(QStringLiteral("aucun-bus")), logPath);
+    controller.setDetectionFilter([](const OnAccessDetection &detection) {
+        return detection.path == QLatin1String("/home/u/en-quarantaine.exe");
+    });
+    QSignalSpy detected(&controller, &OnAccessController::threatDetected);
+    controller.startMonitoring();
+
+    append(logPath, "/home/u/en-quarantaine.exe: Win.Trojan.A FOUND\n/home/u/autre.exe: Win.Trojan.B FOUND\n");
+    QVERIFY(detected.wait(3000));
+    QTest::qWait(300);
+    QCOMPARE(detected.count(), 1);
+    QCOMPARE(detected.first().first().value<OnAccessDetection>().path, QStringLiteral("/home/u/autre.exe"));
 }
 
 void TestOnAccess::generatedFilesMatchCode()

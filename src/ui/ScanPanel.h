@@ -8,6 +8,7 @@
 
 class Card;
 class PlaceholderStack;
+class Quarantine;
 class QButtonGroup;
 class QLabel;
 class QLineEdit;
@@ -32,7 +33,7 @@ class ScanPanel : public QWidget
     Q_OBJECT
 
 public:
-    ScanPanel(ScanManager *scans, ScanHistory *history, QWidget *parent = nullptr);
+    ScanPanel(ScanManager *scans, ScanHistory *history, Quarantine *quarantine, QWidget *parent = nullptr);
 
     void chooseFiles();
     void chooseFolder();
@@ -51,7 +52,8 @@ private:
     // Bilan d'un scan terminé (le dernier, ou celui de l'historique au lancement).
     void showSummary(const ScanSummary &summary, ScanManager::Origin origin);
     void showIdle();
-    void setStats(const QString &scanned, const QString &threats, const QString &errors, const QString &duration);
+    void setStats(const QString &scanned, const QString &threats, const QString &warnings, const QString &errors,
+                  const QString &duration);
     void updateElapsed();
     void updateFilterButtons();
     // Texte affiché à la place de la liste vide : selon le filtre et l'activité.
@@ -62,6 +64,7 @@ private:
 
     ScanManager *m_scans;
     ScanHistory *m_history;
+    Quarantine *m_quarantine;
     ScanResultsModel *m_model;
     ScanResultsFilter *m_filter;
 
@@ -80,13 +83,15 @@ private:
 
     QLabel *m_scannedValue;
     QLabel *m_threatsValue;
+    QLabel *m_warningsValue;
     QLabel *m_errorsValue;
     QLabel *m_durationValue;
 
     QButtonGroup *m_filterGroup;
-    QList<QToolButton *> m_filterButtons; // tous, menaces, erreurs, sains
+    QList<QToolButton *> m_filterButtons; // tous, menaces, avertissements, erreurs, sains
     QLineEdit *m_search;
     QPushButton *m_exportButton;
+    QPushButton *m_quarantineButton;
     QTreeView *m_view;
     PlaceholderStack *m_viewStack;
     QLabel *m_limitNote;
@@ -97,7 +102,7 @@ private:
     ScanManager::Origin m_origin = ScanManager::Origin::Manual;
     QString m_target;
     qint64 m_done = 0;
-    qint64 m_counts[3] = {}; // résultats reçus, par statut (ScanResult::Status)
+    qint64 m_counts[ScanResult::kStatusCount] = {}; // résultats reçus, par statut (ScanResult::Status)
     QElapsedTimer m_elapsed;
     QTimer m_clock; // durée affichée pendant le scan
 };

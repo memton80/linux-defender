@@ -40,6 +40,8 @@ private slots:
     void disabledKeepsNothing();
     void clears();
     void ignoresCorruptFile();
+    void savesWarnings();
+    void readsVersion10Files();
 
 private:
     QString filePath() const { return m_dir->filePath(QStringLiteral("sous-dossier/history.json")); }
@@ -156,6 +158,60 @@ void TestScanHistory::ignoresCorruptFile()
     // Et l'historique repart de zéro.
     history.add(record(QStringLiteral("/a")));
     QCOMPARE(ScanHistory(filePath()).records().size(), 1);
+}
+
+void TestScanHistory::savesWarnings()
+{
+    ScanRecord added = record(QStringLiteral("/home/alex/Téléchargements"), 1);
+    added.suspicious = 1;
+    added.unscanned = 2;
+    added.warnings = {
+        {QStringLiteral("/home/alex/Téléchargements/outil.exe"), ScanResult::Status::Suspicious,
+         QStringLiteral("PUA.Win.Tool.Agent-1")},
+        {QStringLiteral("/home/alex/Téléchargements/secret.zip"), ScanResult::Status::Unscanned,
+         QStringLiteral("Heuristics.Encrypted.Zip")},
+        {QStringLiteral("/home/alex/Téléchargements/image.iso"), ScanResult::Status::Unscanned,
+         QStringLiteral("Non analysé : plus gros que la limite de clamd")},
+    };
+    ScanHistory(filePath()).add(added);
+
+    const ScanRecord loaded = *ScanHistory(filePath()).last();
+    QCOMPARE(loaded.suspicious, qint64(1));
+    QCOMPARE(loaded.unscanned, qint64(2));
+    QCOMPARE(loaded.infected, qint64(1));
+    QCOMPARE(loaded.threats.size(), 1);
+    QCOMPARE(loaded.warnings.size(), 3);
+    for (int i = 0; i < 3; ++i) {
+        QCOMPARE(loaded.warnings.at(i).path, added.warnings.at(i).path);
+        QCOMPARE(int(loaded.warnings.at(i).status), int(added.warnings.at(i).status));
+        QCOMPARE(loaded.warnings.at(i).detail, added.warnings.at(i).detail);
+    }
+    const ScanSummary summary = loaded.toSummary();
+    QCOMPARE(summary.suspicious, qint64(1));
+    QCOMPARE(summary.unscanned, qint64(2));
+    QCOMPARE(summary.warnings.size(), 3);
+}
+
+void TestScanHistory::readsVersion10Files()
+{
+    // Historique écrit par la version 1.0.2 : ni compteurs d'avertissements,
+    // ni liste « warnings ».
+    QDir().mkpath(QFileInfo(filePath()).absolutePath());
+    QFile file(filePath());
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write(R"({"version":1,"scans":[{"started":"2026-09-24T16:02:30.125","elapsedMsecs":42000,)"
+               R"("origin":"quick","paths":["/home/alex/Téléchargements"],"scanned":10,"infected":1,)"
+               R"("errors":0,"skipped":0,"cancelled":false,)"
+               R"("threats":[{"path":"/home/alex/Téléchargements/eicar.com","name":"Win.Test.EICAR_HDB-1"}]}]})");
+    file.close();
+
+    const ScanRecord loaded = *ScanHistory(filePath()).last();
+    QCOMPARE(loaded.origin, ScanManager::Origin::Quick);
+    QCOMPARE(loaded.infected, qint64(1));
+    QCOMPARE(loaded.suspicious, qint64(0));
+    QCOMPARE(loaded.unscanned, qint64(0));
+    QVERIFY(loaded.warnings.isEmpty());
+    QCOMPARE(loaded.threats.size(), 1);
 }
 
 QTEST_GUILESS_MAIN(TestScanHistory)

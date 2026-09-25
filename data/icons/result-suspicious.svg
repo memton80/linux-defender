@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Placeholder : fichier suspect, détection heuristique ou programme indésirable (bouclier + point d'interrogation). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <path d="M32 4 L54 12 V30 C54 44 44 54 32 60 C20 54 10 44 10 30 V12 Z" fill="#f67400"/>
+  <path d="M25 23 C25 18.5 28 16 32 16 C36.5 16 39 19 39 22.5 C39 27 32.5 28.5 32 33 V35" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="44" r="3.5" fill="#ffffff"/>
+</svg>

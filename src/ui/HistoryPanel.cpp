@@ -4,9 +4,12 @@
 #include "HistoryModel.h"
 #include "StatusDisplay.h"
 #include "Widgets.h"
+#include "core/Quarantine.h"
 #include "core/ScanHistory.h"
 #include "core/Settings.h"
+#include "core/ThreatText.h"
 
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -19,9 +22,10 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
-HistoryPanel::HistoryPanel(ScanHistory *history, QWidget *parent)
+HistoryPanel::HistoryPanel(ScanHistory *history, Quarantine *quarantine, QWidget *parent)
     : QWidget(parent)
     , m_history(history)
+    , m_quarantine(quarantine)
     , m_model(new HistoryModel(history, this))
 {
     m_info = new QLabel;
@@ -55,11 +59,11 @@ HistoryPanel::HistoryPanel(ScanHistory *history, QWidget *parent)
                                + 4 * charWidth);
     int typeWidth = 0;
     for (const auto origin : {ScanManager::Origin::Manual, ScanManager::Origin::Usb, ScanManager::Origin::Quick,
-                              ScanManager::Origin::Full})
+                              ScanManager::Origin::Full, ScanManager::Origin::Scheduled})
         typeWidth = qMax(typeWidth, metrics.horizontalAdvance(StatusDisplay::originText(origin)));
     columns->resizeSection(HistoryModel::TypeColumn, typeWidth + 3 * charWidth);
-    for (const int column : {HistoryModel::ScannedColumn, HistoryModel::ThreatsColumn, HistoryModel::ErrorsColumn,
-                             HistoryModel::DurationColumn})
+    for (const int column : {HistoryModel::ScannedColumn, HistoryModel::ThreatsColumn, HistoryModel::WarningsColumn,
+                             HistoryModel::ErrorsColumn, HistoryModel::DurationColumn})
         columns->resizeSection(column, metrics.horizontalAdvance(m_model->headerData(column, Qt::Horizontal).toString())
                                            + 4 * charWidth);
     connect(m_view->selectionModel(), &QItemSelectionModel::currentRowChanged, this, &HistoryPanel::showDetails);
@@ -84,7 +88,7 @@ HistoryPanel::HistoryPanel(ScanHistory *history, QWidget *parent)
     m_threatsTitle->setFont(Widgets::scaledFont(m_threatsTitle->font(), 1, true));
     m_threats = new QTreeWidget;
     m_threats->setColumnCount(2);
-    m_threats->setHeaderLabels({tr("Fichier"), tr("Menace")});
+    m_threats->setHeaderLabels({tr("Fichier"), tr("Détail")});
     m_threats->setRootIsDecorated(false);
     m_threats->setUniformRowHeights(true);
     m_threats->setTextElideMode(Qt::ElideMiddle);
@@ -94,12 +98,22 @@ HistoryPanel::HistoryPanel(ScanHistory *history, QWidget *parent)
     m_threats->header()->resizeSection(1, 36 * charWidth);
     connect(m_threats, &QTreeWidget::customContextMenuRequested, this, [this](const QPoint &position) {
         const QTreeWidgetItem *item = m_threats->itemAt(position);
-        if (item)
-            FileActions::execContextMenu(this, m_threats->viewport()->mapToGlobal(position), item->text(0),
-                                         item->text(1), tr("Copier le nom de la menace"));
+        if (!item)
+            return;
+        const QString path = item->data(0, Qt::UserRole).toString();
+        const QString threat = item->text(1);
+        // Quarantaine : menace ou fichier suspect, toujours à son emplacement.
+        const auto status = ScanResult::Status(item->data(1, Qt::UserRole).toInt());
+        std::function<void()> quarantine;
+        if (status != ScanResult::Status::Unscanned && !m_quarantine->contains(path) && QFileInfo::exists(path))
+            quarantine = [this, path, threat] { m_quarantine->add({{path, threat}}); };
+        FileActions::execContextMenu(this, m_threats->viewport()->mapToGlobal(position), path, threat,
+                                     tr("Copier le nom de la menace"), quarantine);
     });
+    // L'état des fichiers (en place, en quarantaine) change : détails à jour.
+    connect(m_quarantine, &Quarantine::changed, this, &HistoryPanel::showDetails);
     connect(m_threats, &QTreeWidget::itemDoubleClicked, this,
-            [](const QTreeWidgetItem *item) { FileActions::showInFileManager(item->text(0)); });
+            [](const QTreeWidgetItem *item) { FileActions::showInFileManager(item->data(0, Qt::UserRole).toString()); });
 
     m_details = new Card;
     auto *detailsLayout = new QVBoxLayout(m_details);
@@ -157,21 +171,40 @@ void HistoryPanel::showDetails()
                                 .arg(StatusDisplay::originText(record.origin),
                                      QLocale().toString(record.started.date(), QLocale::LongFormat),
                                      QLocale().toString(record.started.time(), QLocale::ShortFormat)));
+    QString target = record.paths.join(QStringLiteral(", "));
+    if (record.systemAreas)
+        target += tr(", plus démarrage automatique, fichiers temporaires et programmes en cours");
     m_detailsText->setText(tr("%1\nCible : %2\nDurée : %3")
-                               .arg(StatusDisplay::summaryText(summary), record.paths.join(QStringLiteral(", ")),
+                               .arg(StatusDisplay::summaryText(summary), target,
                                     StatusDisplay::durationText(record.elapsedMsecs)));
 
+    // Menaces, puis fichiers suspects et non analysés.
     m_threats->clear();
-    for (const ScanResult &threat : record.threats)
-        m_threats->addTopLevelItem(new QTreeWidgetItem({threat.path, threat.detail}));
+    for (const QList<ScanResult> *results : {&record.threats, &record.warnings}) {
+        for (const ScanResult &result : *results) {
+            const bool quarantined = m_quarantine->contains(result.path);
+            auto *item = new QTreeWidgetItem(
+                {quarantined ? tr("%1 (en quarantaine)").arg(result.path) : result.path, result.detail});
+            item->setData(0, Qt::UserRole, result.path);
+            item->setData(1, Qt::UserRole, int(result.status));
+            item->setIcon(0, quarantined ? StatusDisplay::quarantineIcon() : StatusDisplay::resultIcon(result.status));
+            item->setToolTip(0, StatusDisplay::resultText(result.status) + QLatin1Char('\n') + result.path);
+            item->setToolTip(1, ThreatText::describe(result.detail));
+            m_threats->addTopLevelItem(item);
+        }
+    }
     const bool hasThreats = !record.threats.isEmpty();
-    m_threats->setVisible(hasThreats);
-    m_threatsTitle->setVisible(hasThreats);
-    if (record.infected > record.threats.size())
-        m_threatsTitle->setText(tr("Menaces détectées (les %1 premières, les fichiers n'ont été ni supprimés ni déplacés) :")
-                                    .arg(record.threats.size()));
-    else
-        m_threatsTitle->setText(tr("Menaces détectées (les fichiers n'ont été ni supprimés ni déplacés) :"));
+    const bool hasWarnings = !record.warnings.isEmpty();
+    m_threats->setVisible(hasThreats || hasWarnings);
+    m_threatsTitle->setVisible(hasThreats || hasWarnings);
+    const bool truncated = record.infected > record.threats.size()
+        || record.suspicious + record.unscanned > record.warnings.size();
+    QString title = hasThreats && hasWarnings ? tr("Menaces et avertissements")
+                    : hasThreats              ? tr("Menaces détectées")
+                                              : tr("Fichiers suspects ou non analysés");
+    if (truncated)
+        title += tr(" (les %1 premiers de chaque catégorie)").arg(ScanSummary::kMaxThreats);
+    m_threatsTitle->setText(title + tr(" — clic droit : mettre en quarantaine un fichier encore en place."));
 }
 
 void HistoryPanel::updateInfo()

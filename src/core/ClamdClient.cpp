@@ -1,22 +1,15 @@
 #include "ClamdClient.h"
 
-#include <QFile>
+#include "ClamdConfig.h"
+
 #include <QFileInfo>
 #include <QLocale>
 #include <QLocalSocket>
-#include <QRegularExpression>
 #include <QTimer>
 
 #include <memory>
 
 namespace {
-
-// Fichiers de configuration de clamd selon les distributions.
-constexpr const char *kConfigFiles[] = {
-    "/etc/clamd.d/scan.conf", // Fedora / RHEL (service clamd@scan)
-    "/etc/clamav/clamd.conf", // Debian / Ubuntu / Arch
-    "/etc/clamd.conf",        // openSUSE
-};
 
 // Emplacements usuels du socket, si aucune configuration n'a été trouvée.
 constexpr const char *kSocketCandidates[] = {
@@ -25,40 +18,6 @@ constexpr const char *kSocketCandidates[] = {
 };
 
 constexpr const char *kFallbackSocket = "/run/clamav/clamd.ctl";
-
-// Renvoie la valeur de la directive « LocalSocket » (lignes non commentées).
-QString socketFromConfig(const QString &configFile)
-{
-    QFile file(configFile);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-        return {};
-
-    static const QRegularExpression directive(QStringLiteral("^\\s*LocalSocket\\s+(\\S+)"));
-    while (!file.atEnd()) {
-        const QRegularExpressionMatch match = directive.match(QString::fromUtf8(file.readLine()));
-        if (match.hasMatch())
-            return match.captured(1);
-    }
-    return {};
-}
-
-// Groupe que l'utilisateur doit rejoindre pour accéder au socket : celui du
-// dossier s'il n'est pas traversable, sinon celui du socket lui-même.
-QString socketGroup(const QString &socketPath)
-{
-    const QFileInfo socket(socketPath);
-    const QFileInfo dir(socket.absolutePath());
-
-    QString group;
-    if (dir.exists() && !dir.isExecutable())
-        group = dir.group();
-    else if (socket.exists())
-        group = socket.group();
-
-    if (group.isEmpty() || group == QLatin1String("root"))
-        group = QStringLiteral("clamav");
-    return group;
-}
 
 } // namespace
 
@@ -80,6 +39,22 @@ ClamdVersion ClamdVersion::fromReply(const QByteArray &reply)
         version.signaturesDate = QLocale::c().toDateTime(date, QStringLiteral("ddd MMM d HH:mm:ss yyyy"));
     }
     return version;
+}
+
+QString ClamdClient::socketGroup(const QString &socketPath)
+{
+    const QFileInfo socket(socketPath);
+    const QFileInfo dir(socket.absolutePath());
+
+    QString group;
+    if (dir.exists() && !dir.isExecutable())
+        group = dir.group();
+    else if (socket.exists())
+        group = socket.group();
+
+    if (group.isEmpty() || group == QLatin1String("root"))
+        group = QStringLiteral("clamav");
+    return group;
 }
 
 QString ClamdClient::errorMessage(Error error, const QString &socketPath, const QString &detail)
@@ -160,8 +135,8 @@ void ClamdClient::setTimeout(int msecs)
 
 QString ClamdClient::detectSocketPath()
 {
-    for (const char *config : kConfigFiles) {
-        const QString path = socketFromConfig(QString::fromLatin1(config));
+    for (const QString &config : ClamdConfig::defaultFiles()) {
+        const QString path = ClamdConfig::read(config).localSocket;
         if (!path.isEmpty())
             return path;
     }

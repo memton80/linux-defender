@@ -5,6 +5,7 @@
 class ClamdClient;
 class PathListEdit;
 class QCheckBox;
+class QComboBox;
 class QDialogButtonBox;
 class QLabel;
 class QLineEdit;
@@ -60,6 +61,10 @@ private:
     QSpinBox *m_historyMax;
     // Analyse
     PathListEdit *m_quickScanPaths;
+    QCheckBox *m_quickScanSystemAreas;
+    QComboBox *m_scheduleFrequency;
+    QComboBox *m_scheduleKind;
+    QCheckBox *m_scheduleSkipOnBattery;
     PathListEdit *m_excludedPaths;
     QCheckBox *m_scanHidden;
     QCheckBox *m_limitFileSize;

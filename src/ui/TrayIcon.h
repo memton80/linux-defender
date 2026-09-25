@@ -13,6 +13,7 @@
 
 class OnAccessController;
 class QAction;
+class Quarantine;
 
 /**
  * Icône dans la zone de notification. Sous Plasma, Qt passe par le protocole
@@ -36,7 +37,8 @@ class TrayIcon : public QSystemTrayIcon
     Q_OBJECT
 
 public:
-    TrayIcon(ClamdWatcher *watcher, ScanManager *scans, OnAccessController *onAccess, QObject *parent = nullptr);
+    TrayIcon(ClamdWatcher *watcher, ScanManager *scans, OnAccessController *onAccess, Quarantine *quarantine,
+             QObject *parent = nullptr);
 
     // L'utilisateur a vu les résultats (fenêtre ouverte) : l'icône « menace » disparaît.
     void acknowledgeThreats();
@@ -67,6 +69,8 @@ private:
     ClamdWatcher *m_watcher;
     ScanManager *m_scans;
     OnAccessController *m_onAccess;
+    Quarantine *m_quarantine;
+    QString m_quarantineRequested; // fichier mis en quarantaine depuis une alerte : résultat à notifier
     QMenu m_menu;
     QAction *m_statusAction;
     QAction *m_onAccessAction;
@@ -77,6 +81,7 @@ private:
     DesktopNotifier m_notifier;
     QHash<QString, QIcon> m_fallbackIcons; // par clé de notification
     QList<ThreatText::Threat> m_scanThreats;     // premières menaces du scan en cours
+    QList<ThreatText::Threat> m_scanSuspicious;  // premiers fichiers suspects du scan en cours
     QList<ThreatText::Threat> m_realtimeThreats; // détections de l'alerte affichée, pas encore consultées
     ClamdWatcher::State m_lastClamdState;
     QString m_outdatedSignaturesNotified; // version des signatures déjà signalée comme obsolète

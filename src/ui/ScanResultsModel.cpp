@@ -1,14 +1,62 @@
 #include "ScanResultsModel.h"
 
 #include "StatusDisplay.h"
+#include "core/ThreatText.h"
+
+namespace
+{
+// Ordre de la liste triée par statut : ce qui demande une action d'abord.
+int sortRank(ScanResult::Status status)
+{
+    switch (status) {
+    case ScanResult::Status::Infected:
+        return 0;
+    case ScanResult::Status::Suspicious:
+        return 1;
+    case ScanResult::Status::Unscanned:
+        return 2;
+    case ScanResult::Status::Error:
+        return 3;
+    case ScanResult::Status::Clean:
+        break;
+    }
+    return 4;
+}
+
+// Nom de signature : Infected, Suspicious, et Unscanned quand c'est clamd qui
+// le signale (Heuristics.Encrypted...). Sinon, `detail` est déjà une explication.
+bool hasSignature(const ScanResult &result)
+{
+    switch (result.status) {
+    case ScanResult::Status::Infected:
+    case ScanResult::Status::Suspicious:
+        return true;
+    case ScanResult::Status::Unscanned:
+        return result.detail.startsWith(QLatin1String("Heuristics."));
+    case ScanResult::Status::Clean:
+    case ScanResult::Status::Error:
+        break;
+    }
+    return false;
+}
+}
 
 ScanResultsModel::ScanResultsModel(QObject *parent)
     : QAbstractTableModel(parent)
-    , m_cleanIcon(StatusDisplay::resultIcon(ScanResult::Status::Clean))
-    , m_infectedIcon(StatusDisplay::resultIcon(ScanResult::Status::Infected))
-    , m_errorIcon(StatusDisplay::resultIcon(ScanResult::Status::Error))
 {
+    for (int status = 0; status < ScanResult::kStatusCount; ++status)
+        m_icons[status] = StatusDisplay::resultIcon(ScanResult::Status(status));
+    m_quarantineIcon = StatusDisplay::quarantineIcon();
     m_infectedFont.setBold(true);
+}
+
+void ScanResultsModel::setQuarantine(const Quarantine *quarantine)
+{
+    m_quarantine = quarantine;
+    connect(quarantine, &Quarantine::changed, this, [this] {
+        if (!m_results.isEmpty())
+            emit dataChanged(index(0, 0), index(int(m_results.size()) - 1, ColumnCount - 1));
+    });
 }
 
 void ScanResultsModel::clear()
@@ -43,6 +91,16 @@ void ScanResultsModel::append(const QList<ScanResult> &results)
     endInsertRows();
 }
 
+QList<Quarantine::Item> ScanResultsModel::threatsToQuarantine() const
+{
+    QList<Quarantine::Item> items;
+    for (const ScanResult &result : m_results) {
+        if (result.status == ScanResult::Status::Infected && !(m_quarantine && m_quarantine->contains(result.path)))
+            items.append({result.path, result.detail});
+    }
+    return items;
+}
+
 qint64 ScanResultsModel::unlistedCleanCount() const
 {
     return m_unlistedClean;
@@ -63,50 +121,48 @@ QVariant ScanResultsModel::data(const QModelIndex &index, int role) const
     if (!index.isValid() || index.row() >= m_results.size())
         return {};
     const ScanResult &result = m_results.at(index.row());
+    const bool quarantined = result.status != ScanResult::Status::Clean && m_quarantine
+        && m_quarantine->contains(result.path);
 
     switch (role) {
     case Qt::DisplayRole:
         switch (index.column()) {
         case StatusColumn:
-            return StatusDisplay::resultText(result.status);
+            return quarantined ? tr("En quarantaine") : StatusDisplay::resultText(result.status);
         case PathColumn:
             return result.path;
         case DetailColumn:
             return result.detail;
         }
         break;
-    case Qt::ToolTipRole:
-        return result.detail.isEmpty() ? result.path : result.path + QLatin1Char('\n') + result.detail;
-    case Qt::DecorationRole:
-        if (index.column() == StatusColumn) {
-            switch (result.status) {
-            case ScanResult::Status::Clean:
-                return m_cleanIcon;
-            case ScanResult::Status::Infected:
-                return m_infectedIcon;
-            case ScanResult::Status::Error:
-                return m_errorIcon;
-            }
+    case Qt::ToolTipRole: {
+        QString tip = result.path;
+        if (!result.detail.isEmpty())
+            tip += QLatin1Char('\n') + result.detail;
+        // Nom de signature : sa signification en clair (« Fichier chiffré... »).
+        if (hasSignature(result)) {
+            const QString description = ThreatText::describe(result.detail);
+            if (description != result.detail)
+                tip += QLatin1Char('\n') + description;
         }
+        return tip;
+    }
+    case Qt::DecorationRole:
+        if (index.column() == StatusColumn)
+            return quarantined ? m_quarantineIcon : m_icons[int(result.status)];
         break;
     case Qt::FontRole:
         // Menace en gras : bien visible, sans couleur codée en dur.
-        if (result.status == ScanResult::Status::Infected)
+        if (result.status == ScanResult::Status::Infected && !quarantined)
             return m_infectedFont;
         break;
+    case QuarantinedRole:
+        return quarantined;
     case StatusRole:
         return int(result.status);
     case SortRole:
-        if (index.column() == StatusColumn) {
-            switch (result.status) {
-            case ScanResult::Status::Infected:
-                return 0;
-            case ScanResult::Status::Error:
-                return 1;
-            case ScanResult::Status::Clean:
-                return 2;
-            }
-        }
+        if (index.column() == StatusColumn)
+            return sortRank(result.status);
         return data(index, Qt::DisplayRole);
     }
     return {};
@@ -122,7 +178,7 @@ QVariant ScanResultsModel::headerData(int section, Qt::Orientation orientation, 
     case PathColumn:
         return tr("Fichier");
     case DetailColumn:
-        return tr("Menace ou erreur");
+        return tr("Détail");
     }
     return {};
 }
@@ -134,11 +190,11 @@ ScanResultsFilter::ScanResultsFilter(QObject *parent)
     setDynamicSortFilter(true);
 }
 
-void ScanResultsFilter::setStatus(std::optional<ScanResult::Status> status)
+void ScanResultsFilter::setStatuses(const QList<ScanResult::Status> &statuses)
 {
-    if (status == m_status)
+    if (statuses == m_statuses)
         return;
-    m_status = status;
+    m_statuses = statuses;
     invalidateFilter();
 }
 
@@ -154,7 +210,9 @@ void ScanResultsFilter::setText(const QString &text)
 bool ScanResultsFilter::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const
 {
     const QAbstractItemModel *model = sourceModel();
-    if (m_status && model->index(sourceRow, 0, sourceParent).data(ScanResultsModel::StatusRole).toInt() != int(*m_status))
+    if (!m_statuses.isEmpty()
+        && !m_statuses.contains(
+            ScanResult::Status(model->index(sourceRow, 0, sourceParent).data(ScanResultsModel::StatusRole).toInt())))
         return false;
     if (m_text.isEmpty())
         return true;

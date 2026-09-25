@@ -3,6 +3,7 @@
 #include "FileActions.h"
 #include "StatusDisplay.h"
 #include "core/ClamdWatcher.h"
+#include "core/Quarantine.h"
 #include "core/Settings.h"
 #include "system/OnAccessController.h"
 
@@ -45,11 +46,13 @@ QString notificationIcon(const QString &themeName, const QString &resource)
 }
 }
 
-TrayIcon::TrayIcon(ClamdWatcher *watcher, ScanManager *scans, OnAccessController *onAccess, QObject *parent)
+TrayIcon::TrayIcon(ClamdWatcher *watcher, ScanManager *scans, OnAccessController *onAccess, Quarantine *quarantine,
+                   QObject *parent)
     : QSystemTrayIcon(parent)
     , m_watcher(watcher)
     , m_scans(scans)
     , m_onAccess(onAccess)
+    , m_quarantine(quarantine)
     // Nom affiché et fichier .desktop : Plasma y rattache les notifications.
     , m_notifier(QGuiApplication::applicationDisplayName(), QGuiApplication::desktopFileName())
     , m_lastClamdState(watcher->state())
@@ -111,6 +114,30 @@ TrayIcon::TrayIcon(ClamdWatcher *watcher, ScanManager *scans, OnAccessController
     connect(m_scans, &ScanManager::scanFinished, this, &TrayIcon::onScanFinished);
     connect(m_onAccess, &OnAccessController::stateChanged, this, &TrayIcon::updateState);
     connect(m_onAccess, &OnAccessController::threatDetected, this, &TrayIcon::onRealtimeThreat);
+    // Quarantaine demandée depuis une alerte : le résultat remplace l'alerte.
+    connect(m_quarantine, &Quarantine::finished, this,
+            [this](Quarantine::Operation operation, const QString &path, const QString &error) {
+                if (operation != Quarantine::Operation::Add || path != m_quarantineRequested)
+                    return;
+                m_quarantineRequested.clear();
+                DesktopNotifier::Notification notification;
+                notification.timeoutMsecs = kNotificationDuration;
+                notification.actions = {{QStringLiteral("default"), tr("Ouvrir la fenêtre")}};
+                if (error.isEmpty()) {
+                    notification.title = tr("Mis en quarantaine : %1").arg(QFileInfo(path).fileName());
+                    notification.body = tr("Le fichier a été retiré de %1 et rendu inerte. Il reste restaurable "
+                                           "depuis la page « Quarantaine ».")
+                                            .arg(ThreatText::shortPath(QFileInfo(path).absolutePath()));
+                    notification.icon = notificationIcon(QStringLiteral("security-high"),
+                                                         QStringLiteral(":/icons/status-ok.svg"));
+                } else {
+                    notification.title = tr("Mise en quarantaine impossible");
+                    notification.body = error;
+                    notification.icon = notificationIcon(QStringLiteral("dialog-error"),
+                                                         QStringLiteral(":/icons/result-warning.svg"));
+                }
+                notify(kRealtimeKey, notification, StatusDisplay::quarantineIcon());
+            });
     updateState();
 }
 
@@ -129,6 +156,7 @@ void TrayIcon::acknowledgeThreats()
 void TrayIcon::onScanStarted(const QStringList &paths, ScanManager::Origin origin)
 {
     m_scanThreats.clear();
+    m_scanSuspicious.clear();
     // Scan automatique : on prévient l'utilisateur, qui ne l'a pas demandé
     // (et ne pourra pas éjecter la clé tant que le scan lit ses fichiers).
     if (origin == ScanManager::Origin::Usb && Settings::usbNotify()) {
@@ -150,6 +178,8 @@ void TrayIcon::onResults(const QList<ScanResult> &results)
     for (const ScanResult &result : results) {
         if (result.status == ScanResult::Status::Infected && m_scanThreats.size() < kMaxThreatsInNotification)
             m_scanThreats.append({result.path, result.detail});
+        else if (result.status == ScanResult::Status::Suspicious && m_scanSuspicious.size() < kMaxThreatsInNotification)
+            m_scanSuspicious.append({result.path, result.detail});
     }
 }
 
@@ -178,6 +208,17 @@ void TrayIcon::onScanFinished(const ScanSummary &summary, ScanManager::Origin or
         }
         m_notifier.close(kScanKey); // « Analyse en cours… »
         notify(kScanThreatsKey, notification, StatusDisplay::threatIcon());
+    } else if (summary.suspicious > 0) {
+        // Soupçons seulement : toujours signalés, mais sans alerte critique.
+        const ThreatText::Alert alert =
+            ThreatText::suspiciousAlert(m_scanSuspicious, summary.suspicious, StatusDisplay::summaryText(summary));
+        notification.title = alert.title;
+        notification.body = alert.body;
+        notification.icon = notificationIcon(QStringLiteral("security-medium"),
+                                             QStringLiteral(":/icons/result-suspicious.svg"));
+        notification.actions.append({QStringLiteral("details"), tr("Afficher les détails")});
+        m_notifier.close(kScanKey);
+        notify(kScanThreatsKey, notification, StatusDisplay::resultIcon(ScanResult::Status::Suspicious));
     } else if (!summary.fatalError.isEmpty()) {
         notification.title = tr("Analyse impossible");
         notification.body = summary.fatalError;
@@ -198,11 +239,16 @@ void TrayIcon::onScanFinished(const ScanSummary &summary, ScanManager::Origin or
         notify(kScanKey, notification, StatusDisplay::resultIcon(ScanResult::Status::Clean));
     }
     m_scanThreats.clear();
+    m_scanSuspicious.clear();
     updateState();
 }
 
 void TrayIcon::onRealtimeThreat(const OnAccessDetection &detection)
 {
+    // Archive chiffrée, fichier trop gros : listé dans la fenêtre, sans alerte
+    // (un téléchargement protégé par mot de passe n'est pas une menace).
+    if (ThreatText::kind(detection.threat) == ThreatText::Kind::Unscanned)
+        return;
     m_threatsPending = true;
     m_threatSummary = tr("Menace détectée en temps réel : %1").arg(ThreatText::shortPath(detection.path));
     // Toutes les détections pas encore consultées tiennent dans une seule
@@ -226,16 +272,27 @@ void TrayIcon::showRealtimeAlert()
     DesktopNotifier::Notification notification;
     notification.title = alert.title;
     notification.body = alert.body;
-    notification.icon = notificationIcon(QStringLiteral("security-low"), QStringLiteral(":/icons/result-threat.svg"));
-    // Critique : reste affichée jusqu'à sa fermeture, même en mode « Ne pas déranger ».
-    notification.urgency = DesktopNotifier::Urgency::Critical;
-    notification.timeoutMsecs = 0;
+    // Critique : reste affichée jusqu'à sa fermeture, même en mode « Ne pas
+    // déranger ». Des fichiers seulement suspects n'en justifient pas autant.
+    const bool threat = std::any_of(m_realtimeThreats.cbegin(), m_realtimeThreats.cend(), [](const ThreatText::Threat &t) {
+        return ThreatText::kind(t.name) == ThreatText::Kind::Threat;
+    });
+    if (threat) {
+        notification.icon = notificationIcon(QStringLiteral("security-low"), QStringLiteral(":/icons/result-threat.svg"));
+        notification.urgency = DesktopNotifier::Urgency::Critical;
+        notification.timeoutMsecs = 0;
+    } else {
+        notification.icon = notificationIcon(QStringLiteral("security-medium"),
+                                             QStringLiteral(":/icons/result-suspicious.svg"));
+    }
     notification.actions = {{QStringLiteral("default"), tr("Afficher les détails")},
                             {QStringLiteral("details"), tr("Afficher les détails")}};
     // Pas d'aperçu du fichier dans la notification : pour le générer, le
     // bureau ouvrirait le fichier malveillant.
-    if (m_realtimeThreats.size() == 1)
+    if (m_realtimeThreats.size() == 1) {
+        notification.actions.append({QStringLiteral("quarantine"), tr("Mettre en quarantaine")});
         notification.actions.append({QStringLiteral("folder"), tr("Ouvrir le dossier")});
+    }
     notify(kRealtimeKey, notification, StatusDisplay::threatIcon());
 }
 
@@ -276,6 +333,17 @@ void TrayIcon::onNotificationAction(const QString &key, const QString &action, c
     if (action == QLatin1String("folder")) {
         if (!m_realtimeThreats.isEmpty())
             FileActions::showInFileManager(m_realtimeThreats.first().path, activationToken);
+        return;
+    }
+    if (action == QLatin1String("quarantine")) {
+        if (!m_realtimeThreats.isEmpty()) {
+            const ThreatText::Threat threat = m_realtimeThreats.first();
+            m_quarantineRequested = threat.path;
+            m_quarantine->add({{threat.path, threat.name}});
+            m_realtimeThreats.clear();
+            m_threatsPending = false;
+            updateState();
+        }
         return;
     }
     // Sous Wayland, ce jeton autorise la fenêtre à prendre le focus : Qt le

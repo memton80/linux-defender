@@ -4,6 +4,33 @@
 #include <QLocalServer>
 #include <QLockFile>
 #include <QObject>
+#include <QStringList>
+
+#include <optional>
+
+/**
+ * Demande transmise par une instance suivante à l'instance déjà lancée :
+ * afficher la fenêtre, analyser des fichiers (menu de Dolphin, --scan) ou
+ * lancer une analyse rapide (--quick-scan).
+ *
+ * `activationToken` : jeton xdg-activation reçu par l'instance suivante
+ * (variable XDG_ACTIVATION_TOKEN, fournie par Dolphin ou le lanceur) ; sous
+ * Wayland, il permet à la fenêtre de l'instance déjà lancée de prendre le focus.
+ *
+ * Format : une ligne de JSON. « show » seul reste compris (versions 1.0.x).
+ */
+struct InstanceRequest
+{
+    enum class Action { Show, Scan, QuickScan };
+
+    Action action = Action::Show;
+    QStringList paths; // Scan : chemins absolus
+    QString activationToken;
+
+    QByteArray encode() const;
+    // std::nullopt si le message n'est pas reconnu.
+    static std::optional<InstanceRequest> decode(const QByteArray &message);
+};
 
 /**
  * Empêche de lancer l'application deux fois.

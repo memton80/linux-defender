@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Placeholder : fichier non analysé par clamd, archive chiffrée ou trop gros (bouclier + tiret). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <path d="M32 4 L54 12 V30 C54 44 44 54 32 60 C20 54 10 44 10 30 V12 Z" fill="#7f8c8d"/>
+  <path d="M22 31 H42" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+</svg>

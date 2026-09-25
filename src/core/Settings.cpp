@@ -24,6 +24,11 @@ const QString kNotifyClamdLostKey = QStringLiteral("notifications/clamdLost");
 const QString kNotifySignaturesKey = QStringLiteral("notifications/signatures");
 const QString kCloseToTrayKey = QStringLiteral("general/closeToTray");
 const QString kHistoryMaxEntriesKey = QStringLiteral("history/maxEntries");
+const QString kQuickScanSystemAreasKey = QStringLiteral("scan/quickScanSystemAreas");
+const QString kScheduleFrequencyKey = QStringLiteral("schedule/frequency");
+const QString kScheduleKindKey = QStringLiteral("schedule/kind");
+const QString kScheduleSkipOnBatteryKey = QStringLiteral("schedule/skipOnBattery");
+const QString kScheduleLastRunKey = QStringLiteral("schedule/lastRun");
 
 // Bornes des réglages numériques : un fichier de réglages modifié à la main
 // ne doit pas produire de valeur absurde (vérification toutes les 0 s...).
@@ -121,6 +126,16 @@ QStringList quickScanPaths()
 void setQuickScanPaths(const QStringList &paths)
 {
     setPathList(kQuickScanPathsKey, paths);
+}
+
+bool quickScanSystemAreas()
+{
+    return QSettings().value(kQuickScanSystemAreasKey, Defaults::quickScanSystemAreas).toBool();
+}
+
+void setQuickScanSystemAreas(bool enabled)
+{
+    QSettings().setValue(kQuickScanSystemAreasKey, enabled);
 }
 
 QStringList excludedPaths()
@@ -240,6 +255,46 @@ int historyMaxEntries()
 void setHistoryMaxEntries(int count)
 {
     QSettings().setValue(kHistoryMaxEntriesKey, count);
+}
+
+int scheduleFrequency()
+{
+    return intValue(kScheduleFrequencyKey, Defaults::scheduleFrequency, 0, 2);
+}
+
+void setScheduleFrequency(int frequency)
+{
+    QSettings().setValue(kScheduleFrequencyKey, frequency);
+}
+
+int scheduleKind()
+{
+    return intValue(kScheduleKindKey, Defaults::scheduleKind, 0, 1);
+}
+
+void setScheduleKind(int kind)
+{
+    QSettings().setValue(kScheduleKindKey, kind);
+}
+
+bool scheduleSkipOnBattery()
+{
+    return QSettings().value(kScheduleSkipOnBatteryKey, Defaults::scheduleSkipOnBattery).toBool();
+}
+
+void setScheduleSkipOnBattery(bool enabled)
+{
+    QSettings().setValue(kScheduleSkipOnBatteryKey, enabled);
+}
+
+QDateTime scheduleLastRun()
+{
+    return QDateTime::fromString(QSettings().value(kScheduleLastRunKey).toString(), Qt::ISODate);
+}
+
+void setScheduleLastRun(const QDateTime &time)
+{
+    QSettings().setValue(kScheduleLastRunKey, time.toString(Qt::ISODate));
 }
 
 } // namespace Settings

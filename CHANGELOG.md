@@ -5,6 +5,62 @@ Les versions publiées correspondent aux tags `vX.Y.Z` (voir les
 dans le fichier `VERSION` ; avant la 1.0.2, les paquets construits hors tag portaient la version
 `0.0.0~dev`.
 
+## [Non publié]
+
+### Corrigé
+
+- Dossiers partagés (`/tmp`, `/var/tmp`, `/dev/shm`) : les fichiers des autres utilisateurs
+  (illisibles) ne sont plus comptés en erreur.
+- Un fichier contenu dans plusieurs des chemins choisis (dossier et sous-dossier) n'est plus
+  analysé deux fois.
+
+- **Fichiers trop gros pour clamd affichés « sains ».** Au-delà de sa limite `MaxFileSize`
+  (100 Mo par défaut, 25 Mo dans la configuration installée par Debian et Ubuntu) ou de 2 Go,
+  clamd répond « OK » sans lire le fichier (vérifié avec ClamAV 1.5.4, virus compris). L'application lit maintenant cette limite dans la configuration de
+  clamd et signale ces fichiers **« non analysé »**. La page « Analyse » des paramètres affiche
+  la limite trouvée.
+- **Soupçons présentés comme des menaces.** Les détections heuristiques (`Heuristics.*` :
+  hameçonnage, exécutable malformé, macros...) et les programmes potentiellement indésirables
+  (`PUA.*`) sont classés **« suspect »** : notification sans alerte critique, bandeau orange au
+  lieu de rouge. Les archives chiffrées et les limites dépassées (`Heuristics.Encrypted.*`,
+  `Heuristics.Limits.Exceeded.*`) sont classées **« non analysé »** ; détectées en temps réel,
+  elles ne déclenchent plus d'alerte.
+
+### Ajouté
+
+- **Page Diagnostic** : clamd (service arrêté, en échec ou absent ; ligne `Example` et socket
+  désactivé de Fedora), accès au socket (groupe à rejoindre, ou session à rouvrir), signatures et
+  `clamav-freshclam`, SELinux (`antivirus_can_scan_system`), `AlertExceedsMax`, protection en temps
+  réel et limite inotify. Chaque problème a son explication, la commande exacte à copier et, si
+  possible, une **correction en un clic**. Le bandeau de l'accueil y mène (« Résoudre »).
+- **Menu contextuel de Dolphin « Analyser avec Linux Defender »** sur les fichiers et dossiers
+  locaux, et action **« Analyse rapide »** dans le menu des applications. Options
+  `--scan <chemins…>` et `--quick-scan` : l'analyse est transmise à l'instance déjà lancée, avec
+  le jeton d'activation Wayland pour que sa fenêtre prenne le focus.
+- **Quarantaine** : clic droit sur une menace (analyse, temps réel, historique), bouton « Mettre
+  les N menaces en quarantaine » après une analyse, ou bouton de l'alerte d'une détection en temps
+  réel. Le fichier est retiré de son emplacement et rendu inerte (contenu brouillé : ni ouvert, ni
+  exécuté, ni détecté de nouveau), avec son empreinte SHA-256, dans
+  `~/.local/share/linux-defender/quarantine`. Nouvelle page **Quarantaine** : restauration (sans
+  jamais écraser un fichier, empreinte vérifiée) et suppression définitive. Le bandeau rouge de
+  l'accueil disparaît quand les menaces ont été traitées.
+- **Analyse rapide renforcée** : en plus des dossiers choisis, les emplacements où un programme
+  malveillant s'installe (démarrage automatique, services utilisateur, `~/.local/bin`, scripts du
+  shell, `/tmp`, `/var/tmp`, `/dev/shm`) et le **programme de chaque processus en cours**, lu par
+  `/proc/<pid>/exe`, même supprimé du disque. Réglable dans les paramètres.
+- **Analyses planifiées** : rapide ou complète, chaque jour ou chaque semaine ; une analyse manquée
+  est faite dès que possible, jamais dans les 5 premières minutes de la session, et reportée sur
+  batterie. La tuile « Dernière analyse » indique la prochaine.
+- **Case « Activer la protection en temps réel »** dans la page du même nom.
+- Programme d'aide `/usr/libexec/linux-defender-helper` (paquets `.deb` et `.rpm`), lancé par
+  `pkexec` sous l'action polkit `io.github.memton80.linux-defender.manage` : mot de passe
+  administrateur retenu quelques minutes, liste fermée d'actions, copie de la configuration de
+  clamd avant modification. Les paquets recommandent `pkexec` (Debian, Ubuntu) ou `polkit` (Fedora).
+- Filtre et compteur **Avertissements** (fichiers suspects et non analysés) dans la page
+  « Analyse », colonne dans l'historique, et liste des avertissements dans le détail d'une
+  analyse. Les historiques des versions précédentes restent lisibles.
+- Infobulle des résultats : signification de la signature en clair.
+
 ## [1.0.2] — 2026-09-24
 
 ### Modifié

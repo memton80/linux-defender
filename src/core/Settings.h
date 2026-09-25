@@ -2,6 +2,7 @@
 
 #include "ScanJob.h"
 
+#include <QDateTime>
 #include <QString>
 #include <QStringList>
 
@@ -24,6 +25,10 @@ constexpr bool notifyClamdLost = true;
 constexpr bool notifySignatures = true;
 constexpr bool closeToTray = true;
 constexpr int historyMaxEntries = 100;
+constexpr bool quickScanSystemAreas = true;
+constexpr int scheduleFrequency = 0; // ScanSchedule::Frequency::Never
+constexpr int scheduleKind = 0;      // ScanSchedule::Kind::Quick
+constexpr bool scheduleSkipOnBattery = true;
 // Téléchargements, Bureau et Documents (ceux qui existent), sinon le dossier personnel.
 QStringList quickScanPaths();
 }
@@ -51,6 +56,11 @@ void setSignaturesMaxAge(int days);
 // Dossiers de l'analyse rapide. Liste vide dans les réglages = Defaults::quickScanPaths().
 QStringList quickScanPaths();
 void setQuickScanPaths(const QStringList &paths);
+
+// Analyse rapide : aussi les emplacements sensibles et les programmes en cours
+// (voir ScanOptions::systemAreas).
+bool quickScanSystemAreas();
+void setQuickScanSystemAreas(bool enabled);
 
 // Dossiers et fichiers exclus des analyses.
 QStringList excludedPaths();
@@ -105,4 +115,18 @@ void setCloseToTray(bool enabled);
 // Nombre d'analyses gardées dans l'historique ; 0 = pas d'historique.
 int historyMaxEntries();
 void setHistoryMaxEntries(int count);
+
+// --- Analyses planifiées (voir ScanSchedule) ---
+
+// ScanSchedule::Frequency et ScanSchedule::Kind, en entier.
+int scheduleFrequency();
+void setScheduleFrequency(int frequency);
+int scheduleKind();
+void setScheduleKind(int kind);
+// Reportée tant que l'ordinateur est sur batterie.
+bool scheduleSkipOnBattery();
+void setScheduleSkipOnBattery(bool enabled);
+// Fin de la dernière analyse planifiée (invalide : jamais).
+QDateTime scheduleLastRun();
+void setScheduleLastRun(const QDateTime &time);
 }

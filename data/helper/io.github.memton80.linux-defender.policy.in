@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  Action polkit du programme d'aide de Linux Defender, lancé par pkexec.
+  Fichier généré à partir de data/helper/io.github.memton80.linux-defender.policy.in.
+  Mot de passe administrateur, retenu quelques minutes (auth_admin_keep) :
+  plusieurs corrections à la suite n'en demandent qu'un. Rien depuis une
+  session distante ou inactive.
+-->
+<policyconfig>
+  <vendor>Linux Defender</vendor>
+  <vendor_url>https://github.com/memton80/linux-defender</vendor_url>
+  <icon_name>linux-defender</icon_name>
+
+  <action id="io.github.memton80.linux-defender.manage">
+    <description>Configure the antivirus (ClamAV)</description>
+    <description xml:lang="fr">Configurer l'antivirus (ClamAV)</description>
+    <message>Authentication is required to configure the antivirus: clamd service, virus signatures, real-time protection.</message>
+    <message xml:lang="fr">Une authentification est nécessaire pour configurer l'antivirus : service clamd, signatures, protection en temps réel.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">@DEFENDER_HELPER_PATH@</annotate>
+  </action>
+</policyconfig>

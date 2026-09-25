@@ -14,6 +14,7 @@ class QLabel;
 class QProgressBar;
 class QPushButton;
 class ScanHistory;
+class SystemDiagnostics;
 
 /**
  * Page « Accueil » : bandeau qui résume l'état de la protection (et propose
@@ -29,7 +30,7 @@ class DashboardPage : public QWidget
 
 public:
     DashboardPage(ClamdWatcher *watcher, ScanManager *scans, OnAccessController *onAccess, ScanHistory *history,
-                  QWidget *parent = nullptr);
+                  SystemDiagnostics *diagnostics, QWidget *parent = nullptr);
 
     // Gravité de l'état résumé par le bandeau (icône de la page dans la fenêtre).
     StatusDisplay::Level level() const;
@@ -48,6 +49,7 @@ signals:
     void showScanRequested();
     void showOnAccessRequested();
     void showHistoryRequested();
+    void showDiagnosticsRequested();
     void settingsRequested();
 
 protected:
@@ -55,7 +57,7 @@ protected:
 
 private:
     // Action du bouton du bandeau, selon l'état.
-    enum class BannerAction { None, Check, QuickScan, ShowOnAccess, ShowHistory };
+    enum class BannerAction { None, Check, QuickScan, ShowOnAccess, ShowHistory, ShowDiagnostics };
 
     struct Tile
     {
@@ -75,6 +77,7 @@ private:
     ScanManager *m_scans;
     OnAccessController *m_onAccess;
     ScanHistory *m_history;
+    SystemDiagnostics *m_diagnostics;
     int m_realtimeThreats = 0;
     StatusDisplay::Level m_level = StatusDisplay::Level::Neutral;
     BannerAction m_bannerAction = BannerAction::None;

@@ -1,19 +1,27 @@
 #include "core/ClamdClient.h"
 #include "core/ClamdWatcher.h"
+#include "core/Quarantine.h"
 #include "core/ScanHistory.h"
 #include "core/ScanManager.h"
 #include "core/Settings.h"
 #include "system/OnAccessController.h"
+#include "system/PrivilegedHelper.h"
+#include "system/ScanSchedule.h"
 #include "system/SingleInstance.h"
+#include "system/SystemDiagnostics.h"
 #include "system/UsbMonitor.h"
 #include "ui/MainWindow.h"
 #include "ui/TrayIcon.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QFileInfo>
 #include <QIcon>
 #include <QLibraryInfo>
+#include <QTimer>
 #include <QTranslator>
+
+#include <cstdio>
 
 int main(int argc, char *argv[])
 {
@@ -43,39 +51,100 @@ int main(int argc, char *argv[])
                                           QCoreApplication::translate("main", "chemin"));
     const QCommandLineOption backgroundOption(QStringLiteral("background"),
                                               QCoreApplication::translate("main", "Démarre en arrière-plan, sans afficher la fenêtre."));
+    const QCommandLineOption scanOption(QStringLiteral("scan"),
+                                        QCoreApplication::translate("main", "Analyse les fichiers et dossiers donnés (menu de Dolphin, par exemple)."));
+    const QCommandLineOption quickScanOption(QStringLiteral("quick-scan"),
+                                             QCoreApplication::translate("main", "Lance une analyse rapide."));
     parser.addOption(socketOption);
     parser.addOption(backgroundOption);
+    parser.addOption(scanOption);
+    parser.addOption(quickScanOption);
+    parser.addPositionalArgument(QStringLiteral("chemins"),
+                                 QCoreApplication::translate("main", "Avec --scan : fichiers et dossiers à analyser."),
+                                 QStringLiteral("[chemins…]"));
     parser.process(app);
 
-    // Déjà lancée ? On lui demande de réafficher sa fenêtre (sauf lancement en
-    // arrière-plan, typiquement au démarrage de la session) et on quitte.
-    const bool background = parser.isSet(backgroundOption);
+    // Demande de cette invocation : afficher la fenêtre, analyser des
+    // fichiers ou lancer une analyse rapide.
+    InstanceRequest request;
+    QStringList scanPaths;
+    for (const QString &path : parser.positionalArguments())
+        scanPaths << QFileInfo(path).absoluteFilePath(); // relatifs au dossier de lancement
+    if (parser.isSet(scanOption) != !scanPaths.isEmpty()) {
+        std::fprintf(stderr, "%s\n",
+                     qPrintable(QCoreApplication::translate("main", "--scan attend un ou plusieurs fichiers ou dossiers, "
+                                                                    "et des chemins ne vont qu'avec --scan.")));
+        return 1;
+    }
+    if (!scanPaths.isEmpty()) {
+        request.action = InstanceRequest::Action::Scan;
+        request.paths = scanPaths;
+    } else if (parser.isSet(quickScanOption)) {
+        request.action = InstanceRequest::Action::QuickScan;
+    }
+    // Sous Wayland, le lanceur (Dolphin, menu des applications) fournit ce
+    // jeton : il permet à la fenêtre de prendre le focus.
+    request.activationToken = qEnvironmentVariable("XDG_ACTIVATION_TOKEN");
+
+    // Déjà lancée ? On lui transmet la demande (réafficher sa fenêtre, sauf
+    // lancement en arrière-plan, typiquement au démarrage de la session ;
+    // analyser) et on quitte.
+    const bool background = parser.isSet(backgroundOption) && request.action == InstanceRequest::Action::Show;
     SingleInstance instance(QStringLiteral("linux-defender"));
-    if (!instance.tryBecomePrimary(background ? QByteArray() : QByteArrayLiteral("show")))
+    if (!instance.tryBecomePrimary(background ? QByteArray() : request.encode()))
         return 0;
 
     ClamdClient client;
     ClamdWatcher watcher(&client);
     ScanManager scans(&client);
     ScanHistory history;
+    ScanSchedule schedule(&scans, &watcher);
     // Réglages pris en compte au lancement, puis à chaque modification.
     const QString socketFromCommandLine = parser.value(socketOption);
     const auto applySettings = [&] {
         client.setSocketPath(!socketFromCommandLine.isEmpty() ? socketFromCommandLine : Settings::effectiveSocketPath());
         watcher.setInterval(Settings::checkInterval() * 1000);
         scans.setOptions(Settings::scanOptions());
+        scans.setQuickScan(Settings::quickScanPaths(), Settings::quickScanSystemAreas());
         history.setMaxRecords(Settings::historyMaxEntries());
+        schedule.setSchedule(ScanSchedule::Frequency(Settings::scheduleFrequency()),
+                             ScanSchedule::Kind(Settings::scheduleKind()), Settings::scheduleSkipOnBattery());
     };
     applySettings();
 
     UsbMonitor usb;
     OnAccessController onAccess;
-    MainWindow window(&watcher, &scans, &onAccess, &history);
-    TrayIcon tray(&watcher, &scans, &onAccess);
+    PrivilegedHelper helper;
+    SystemDiagnostics diagnostics(&watcher, &onAccess);
+    Quarantine quarantine;
+    // Un fichier lu pour être mis en quarantaine est analysé à ce moment-là
+    // par clamonacc : cette nouvelle détection n'en est pas une.
+    onAccess.setDetectionFilter([&quarantine](const OnAccessDetection &detection) {
+        return quarantine.isRecentlyQuarantined(detection.path);
+    });
+    MainWindow window(&watcher, &scans, &onAccess, &history, &diagnostics, &helper, &quarantine);
+    TrayIcon tray(&watcher, &scans, &onAccess, &quarantine);
 
-    QObject::connect(&instance, &SingleInstance::messageReceived, &window, [&window](const QByteArray &message) {
-        if (message == "show")
+    const auto handleRequest = [&window](const InstanceRequest &request) {
+        // Même mécanisme que pour les notifications : Qt lit ce jeton quand
+        // la fenêtre demande à être activée.
+        if (!request.activationToken.isEmpty())
+            qputenv("XDG_ACTIVATION_TOKEN", request.activationToken.toUtf8());
+        switch (request.action) {
+        case InstanceRequest::Action::Show:
             window.showAndActivate();
+            break;
+        case InstanceRequest::Action::Scan:
+            window.scanPaths(request.paths);
+            break;
+        case InstanceRequest::Action::QuickScan:
+            window.startQuickScan();
+            break;
+        }
+    };
+    QObject::connect(&instance, &SingleInstance::messageReceived, &window, [handleRequest](const QByteArray &message) {
+        if (const std::optional<InstanceRequest> request = InstanceRequest::decode(message))
+            handleRequest(*request);
     });
     QObject::connect(&tray, &TrayIcon::showWindowRequested, &window, &MainWindow::showAndActivate);
     QObject::connect(&tray, &TrayIcon::toggleWindowRequested, &window, &MainWindow::toggleVisibility);
@@ -96,6 +165,17 @@ int main(int argc, char *argv[])
         applySettings();
         watcher.checkNow();
     });
+    // Correction du diagnostic : socket de clamd à détecter de nouveau (sa
+    // configuration a pu changer), services à relire. clamd met quelques
+    // secondes à redémarrer (chargement des signatures) : nouvelles
+    // vérifications un peu plus tard.
+    QObject::connect(&window, &MainWindow::systemChanged, &watcher, [&applySettings, &watcher, &onAccess] {
+        applySettings();
+        watcher.checkNow();
+        onAccess.refresh();
+        for (const int delay : {5000, 20000, 60000})
+            QTimer::singleShot(delay, &watcher, &ClamdWatcher::checkNow);
+    });
     QObject::connect(&usb, &UsbMonitor::removableMounted, &scans, [&scans](const QString &mountPoint) {
         if (Settings::usbAutoScan())
             scans.scan({mountPoint}, ScanManager::Origin::Usb);
@@ -112,10 +192,15 @@ int main(int argc, char *argv[])
     }
     if (!hasTray || !background)
         window.show();
+    // Lancée pour analyser (Dolphin, --quick-scan) : l'analyse démarre tout de suite.
+    if (request.action != InstanceRequest::Action::Show)
+        handleRequest(request);
 
     watcher.start();
     // Protection en temps réel : état du service clamonacc, puis suivi de son journal.
     onAccess.refresh();
     onAccess.startMonitoring();
+    diagnostics.refresh();
+    schedule.start();
     return app.exec();
 }

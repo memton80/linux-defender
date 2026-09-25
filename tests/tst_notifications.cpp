@@ -66,8 +66,11 @@ private slots:
     void describe();
     void shortPath_data();
     void shortPath();
+    void kind_data();
+    void kind();
     void realtimeAlertSingle();
     void realtimeAlertGroup();
+    void realtimeAlertSuspicious();
     void scanAlert();
 
     // Notifications D-Bus (faux serveur sur un bus de session privé)
@@ -194,6 +197,34 @@ void TestNotifications::shortPath()
     QVERIFY(result.size() <= 50);
 }
 
+void TestNotifications::kind_data()
+{
+    QTest::addColumn<QString>("signature");
+    QTest::addColumn<int>("kind");
+
+    const int threat = int(ThreatText::Kind::Threat);
+    const int suspicious = int(ThreatText::Kind::Suspicious);
+    const int unscanned = int(ThreatText::Kind::Unscanned);
+    QTest::newRow("cheval de Troie") << "Win.Trojan.Agent-123-0" << threat;
+    QTest::newRow("EICAR") << "Win.Test.EICAR_HDB-1" << threat;
+    QTest::newRow("base tierce") << "Sanesecurity.Foxhole.Zip_fs220.UNOFFICIAL" << threat;
+    QTest::newRow("PUA") << "PUA.Win.Adware.Agent-123-0" << suspicious;
+    QTest::newRow("hameçonnage") << "Heuristics.Phishing.Email.SpoofedDomain" << suspicious;
+    QTest::newRow("exécutable malformé") << "Heuristics.Broken.Executable" << suspicious;
+    QTest::newRow("macros") << "Heuristics.OLE2.ContainsMacros" << suspicious;
+    QTest::newRow("chiffré") << "Heuristics.Encrypted.Zip" << unscanned;
+    QTest::newRow("chiffré (PDF)") << "Heuristics.Encrypted.PDF" << unscanned;
+    QTest::newRow("MaxFileSize") << "Heuristics.Limits.Exceeded.MaxFileSize" << unscanned;
+    QTest::newRow("MaxScanSize") << "Heuristics.Limits.Exceeded.MaxScanSize" << unscanned;
+}
+
+void TestNotifications::kind()
+{
+    QFETCH(QString, signature);
+    QFETCH(int, kind);
+    QCOMPARE(int(ThreatText::kind(signature)), kind);
+}
+
 void TestNotifications::realtimeAlertSingle()
 {
     const ThreatText::Alert alert = ThreatText::realtimeAlert(
@@ -219,6 +250,29 @@ void TestNotifications::realtimeAlertGroup()
     threats = threats.mid(0, 2);
     QCOMPARE(ThreatText::realtimeAlert(threats, QStringLiteral("/home/alex")).title, QStringLiteral("2 menaces détectées"));
     QVERIFY(!ThreatText::realtimeAlert(threats, QStringLiteral("/home/alex")).body.contains(QStringLiteral("autre")));
+}
+
+void TestNotifications::realtimeAlertSuspicious()
+{
+    const QString home = QStringLiteral("/home/alex");
+    const ThreatText::Threat pua{QStringLiteral("/home/alex/Téléchargements/outil.exe"),
+                                 QStringLiteral("PUA.Win.Tool.Agent-1-0")};
+    const ThreatText::Threat trojan{QStringLiteral("/home/alex/Téléchargements/f.exe"),
+                                    QStringLiteral("Win.Trojan.Agent-1-0")};
+    ThreatText::Alert alert = ThreatText::realtimeAlert({pua}, home);
+    QCOMPARE(alert.title, QStringLiteral("Fichier suspect : outil.exe"));
+    QCOMPARE(alert.body, QStringLiteral("Programme potentiellement indésirable (Windows)\n"
+                                        "Dans ~/Téléchargements, toujours en place."));
+    QCOMPARE(ThreatText::realtimeAlert({pua, pua}, home).title, QStringLiteral("2 fichiers suspects détectés"));
+    // Une seule vraie menace suffit : c'est une alerte de menace.
+    QCOMPARE(ThreatText::realtimeAlert({pua, trojan}, home).title, QStringLiteral("2 menaces détectées"));
+
+    alert = ThreatText::suspiciousAlert({pua}, 1, QStringLiteral("Analyse terminée : 3 fichiers analysés."));
+    QCOMPARE(alert.title, QStringLiteral("1 fichier suspect trouvé par l'analyse"));
+    QCOMPARE(alert.body, QStringLiteral("Analyse terminée : 3 fichiers analysés.\n"
+                                        "outil.exe : Programme potentiellement indésirable (Windows)"));
+    QCOMPARE(ThreatText::suspiciousAlert({pua}, 4, QString()).title,
+             QStringLiteral("4 fichiers suspects trouvés par l'analyse"));
 }
 
 void TestNotifications::scanAlert()

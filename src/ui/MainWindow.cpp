@@ -1,15 +1,20 @@
 #include "MainWindow.h"
 
 #include "DashboardPage.h"
+#include "DiagnosticsPanel.h"
 #include "HistoryPanel.h"
 #include "OnAccessPanel.h"
+#include "QuarantinePanel.h"
 #include "ScanPanel.h"
 #include "SettingsDialog.h"
 #include "StatusDisplay.h"
 #include "Widgets.h"
 #include "core/ClamdWatcher.h"
+#include "core/Quarantine.h"
 #include "core/Settings.h"
+#include "core/ThreatText.h"
 #include "system/OnAccessController.h"
+#include "system/SystemDiagnostics.h"
 
 #include <QApplication>
 #include <QCloseEvent>
@@ -24,22 +29,29 @@
 #include <QVBoxLayout>
 
 MainWindow::MainWindow(ClamdWatcher *watcher, ScanManager *scans, OnAccessController *onAccess, ScanHistory *history,
+                       SystemDiagnostics *diagnostics, PrivilegedHelper *helper, Quarantine *quarantine,
                        QWidget *parent)
     : QMainWindow(parent)
     , m_watcher(watcher)
     , m_scans(scans)
     , m_onAccess(onAccess)
-    , m_dashboard(new DashboardPage(watcher, scans, onAccess, history))
-    , m_scanPanel(new ScanPanel(scans, history))
-    , m_onAccessPanel(new OnAccessPanel(onAccess))
-    , m_historyPanel(new HistoryPanel(history))
+    , m_diagnostics(diagnostics)
+    , m_quarantine(quarantine)
+    , m_dashboard(new DashboardPage(watcher, scans, onAccess, history, diagnostics))
+    , m_scanPanel(new ScanPanel(scans, history, quarantine))
+    , m_onAccessPanel(new OnAccessPanel(onAccess, helper, quarantine))
+    , m_quarantinePanel(new QuarantinePanel(quarantine))
+    , m_historyPanel(new HistoryPanel(history, quarantine))
+    , m_diagnosticsPanel(new DiagnosticsPanel(diagnostics, helper))
     , m_pages(new QStackedWidget)
 {
     // Pages, dans l'ordre de l'énumération Page (et de la barre latérale).
     m_pages->addWidget(m_dashboard);
     m_pages->addWidget(m_scanPanel);
     m_pages->addWidget(m_onAccessPanel);
+    m_pages->addWidget(m_quarantinePanel);
     m_pages->addWidget(m_historyPanel);
+    m_pages->addWidget(m_diagnosticsPanel);
 
     // Barre latérale | séparateur | page courante.
     auto *separator = new QFrame;
@@ -66,7 +78,10 @@ MainWindow::MainWindow(ClamdWatcher *watcher, ScanManager *scans, OnAccessContro
         m_historyPanel->selectLatest();
         showPage(HistoryPage);
     });
+    connect(m_dashboard, &DashboardPage::showDiagnosticsRequested, this, [this] { showPage(DiagnosticsPage); });
     connect(m_dashboard, &DashboardPage::settingsRequested, this, &MainWindow::openSettings);
+    connect(m_diagnosticsPanel, &DiagnosticsPanel::fixApplied, this, &MainWindow::systemChanged);
+    connect(m_diagnostics, &SystemDiagnostics::changed, this, &MainWindow::updateNavigationIcons);
     connect(m_dashboard, &DashboardPage::levelChanged, this, &MainWindow::updateNavigationIcons);
 
     // Analyse lancée depuis la fenêtre ou l'icône : sa progression est sur la
@@ -81,16 +96,41 @@ MainWindow::MainWindow(ClamdWatcher *watcher, ScanManager *scans, OnAccessContro
     // Une menace détectée en temps réel est l'information la plus urgente :
     // la fenêtre s'ouvrira directement sur cette page.
     connect(m_onAccess, &OnAccessController::stateChanged, this, &MainWindow::updateNavigationIcons);
-    connect(m_onAccess, &OnAccessController::threatDetected, this, [this] {
-        m_dashboard->setRealtimeThreats(++m_realtimeThreats);
+    connect(m_onAccess, &OnAccessController::threatDetected, this, [this](const OnAccessDetection &detection) {
+        // Archive chiffrée, fichier trop gros : seulement listé dans la page.
+        if (ThreatText::kind(detection.threat) == ThreatText::Kind::Unscanned)
+            return;
+        m_realtimeThreats.insert(detection.path);
+        m_dashboard->setRealtimeThreats(int(m_realtimeThreats.size()));
         showPage(OnAccessPage);
         updateNavigationIcons();
     });
     connect(m_onAccessPanel, &OnAccessPanel::detectionsCleared, this, [this] {
-        m_realtimeThreats = 0;
+        m_realtimeThreats.clear();
         m_dashboard->setRealtimeThreats(0);
         updateNavigationIcons();
     });
+
+    // Quarantaine : une menace en temps réel mise en quarantaine est traitée ;
+    // les échecs d'une série d'opérations sont montrés ensemble, à la fin.
+    connect(m_quarantine, &Quarantine::finished, this,
+            [this](Quarantine::Operation operation, const QString &path, const QString &error) {
+                if (!error.isEmpty()) {
+                    m_quarantineErrors << error;
+                } else if (operation == Quarantine::Operation::Add && m_realtimeThreats.remove(path)) {
+                    m_dashboard->setRealtimeThreats(int(m_realtimeThreats.size()));
+                }
+                updateNavigationIcons();
+            });
+    // Fenêtre fermée : la demande venait de l'alerte, qui affiche déjà le résultat.
+    connect(m_quarantine, &Quarantine::idle, this, [this] {
+        const QString errors = m_quarantineErrors.join(QLatin1Char('\n'));
+        m_quarantineErrors.clear();
+        if (!errors.isEmpty() && isVisible())
+            QMessageBox::warning(this, tr("Quarantaine"), errors);
+    });
+    connect(m_quarantine, &Quarantine::changed, this, &MainWindow::updateNavigationIcons);
+    connect(m_quarantine, &Quarantine::changed, m_dashboard, &DashboardPage::refresh);
 
     updateNavigationIcons();
     showPage(HomePage);
@@ -124,7 +164,9 @@ QWidget *MainWindow::createSidebar()
     const int iconSize = style()->pixelMetric(QStyle::PM_ToolBarIconSize, nullptr, this);
     m_navigation->setIconSize(QSize(iconSize, iconSize));
     const int rowHeight = qMax(iconSize, fontMetrics().height()) + fontMetrics().height();
-    for (const QString &text : {tr("Accueil"), tr("Analyse"), tr("Protection en temps réel"), tr("Historique")}) {
+    for (const QString &text :
+         {tr("Accueil"), tr("Analyse"), tr("Protection en temps réel"), tr("Quarantaine"), tr("Historique"),
+          tr("Diagnostic")}) {
         auto *item = new QListWidgetItem(text, m_navigation);
         item->setSizeHint(QSize(0, rowHeight));
     }
@@ -182,13 +224,29 @@ void MainWindow::updateNavigationIcons()
     m_navigation->item(ScanPage)->setToolTip(m_scans->isScanning() ? tr("Analyse en cours") : QString());
 
     const OnAccessController::State onAccess = m_onAccess->state();
-    m_navigation->item(OnAccessPage)->setIcon(m_realtimeThreats > 0 ? StatusDisplay::threatIcon()
-                                                                    : StatusDisplay::onAccessIcon(onAccess));
+    m_navigation->item(OnAccessPage)->setIcon(!m_realtimeThreats.isEmpty() ? StatusDisplay::threatIcon()
+                                                                           : StatusDisplay::onAccessIcon(onAccess));
+
+    const qsizetype quarantined = m_quarantine->entries().size();
+    m_navigation->item(QuarantinePage)->setText(quarantined > 0 ? tr("Quarantaine (%1)").arg(quarantined)
+                                                                : tr("Quarantaine"));
+    m_navigation->item(QuarantinePage)->setIcon(StatusDisplay::quarantineIcon());
     m_navigation->item(OnAccessPage)->setToolTip(StatusDisplay::onAccessTitle(onAccess));
 
     m_navigation->item(HistoryPage)->setIcon(QIcon::fromTheme(
         QStringLiteral("view-history"), QIcon::fromTheme(QStringLiteral("document-open-recent"),
                                                          StatusDisplay::levelIcon(StatusDisplay::Level::Neutral))));
+
+    // Diagnostic : icône neutre tant qu'il n'y a pas de problème à corriger.
+    const DiagnosticItem::Level diagnostic = m_diagnostics->worstLevel();
+    m_navigation->item(DiagnosticsPage)->setIcon(
+        diagnostic >= DiagnosticItem::Level::Warning
+            ? StatusDisplay::diagnosticIcon(diagnostic)
+            : QIcon::fromTheme(QStringLiteral("tools-report-bug"),
+                               QIcon::fromTheme(QStringLiteral("dialog-information"),
+                                                StatusDisplay::levelIcon(StatusDisplay::Level::Neutral))));
+    const std::optional<DiagnosticItem> problem = m_diagnostics->mostSevere();
+    m_navigation->item(DiagnosticsPage)->setToolTip(problem ? problem->title : tr("Aucun problème détecté"));
 }
 
 void MainWindow::showAndActivate()
@@ -220,9 +278,22 @@ void MainWindow::startQuickScan()
     m_scanPanel->startQuickScan();
 }
 
+void MainWindow::scanPaths(const QStringList &paths)
+{
+    showAndActivate();
+    showPage(ScanPage);
+    m_scans->scan(paths, ScanManager::Origin::Manual);
+}
+
 void MainWindow::showOnAccess()
 {
     showPage(OnAccessPage);
+    showAndActivate();
+}
+
+void MainWindow::showDiagnostics()
+{
+    showPage(DiagnosticsPage);
     showAndActivate();
 }
 

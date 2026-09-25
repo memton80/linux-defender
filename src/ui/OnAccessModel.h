@@ -4,6 +4,9 @@
 
 #include <QAbstractTableModel>
 #include <QFont>
+#include <QIcon>
+
+class Quarantine;
 
 /**
  * Liste des détections en temps réel (clamonacc), la plus récente en tête.
@@ -27,6 +30,10 @@ public:
     void setHistory(const QList<OnAccessDetection> &detections);
     void addDetection(const OnAccessDetection &detection);
     void clear();
+    // Fichiers en quarantaine : leurs lignes l'indiquent (suit ses changements).
+    void setQuarantine(const Quarantine *quarantine);
+    OnAccessDetection detection(int row) const;
+    bool isQuarantined(int row) const;
 
     int rowCount(const QModelIndex &parent = {}) const override;
     int columnCount(const QModelIndex &parent = {}) const override;
@@ -36,4 +43,7 @@ public:
 private:
     QList<OnAccessDetection> m_detections; // la plus récente en premier
     QFont m_threatFont;
+    QIcon m_icons[3]; // par ThreatText::Kind
+    QIcon m_quarantineIcon;
+    const Quarantine *m_quarantine = nullptr;
 };

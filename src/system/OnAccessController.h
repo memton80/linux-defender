@@ -57,9 +57,18 @@ public:
     QString message() const;       // explication lisible de l'état
     QString clamonaccPath() const; // vide si clamonacc est absent
     QStringList watchedPaths() const; // dossiers surveillés (OnAccessIncludePath)
+    // Service activé au démarrage de la machine (ou lancé) : état de la case
+    // « Activer la protection en temps réel ».
+    bool isEnabled() const;
+    // Le dernier échec de clamonacc vient-il de la limite inotify du noyau ?
+    bool inotifyLimitReached() const;
 
     // Dossiers où chercher clamonacc (par défaut : defaultSearchDirectories()).
     void setSearchDirectories(const QStringList &directories);
+    // Détections à taire : `ignore` renvoie true pour celles qui ne doivent
+    // pas être signalées (fichier que l'application vient de lire pour le
+    // mettre en quarantaine, et que clamonacc analyse à ce moment-là).
+    void setDetectionFilter(const std::function<bool(const OnAccessDetection &detection)> &ignore);
 
     // Relit l'état (asynchrone) ; stateChanged() suit.
     void refresh();
@@ -69,12 +78,15 @@ public:
     // Outils exposés pour les tests.
     static QStringList defaultSearchDirectories();
     static QString findClamonacc(const QStringList &directories = defaultSearchDirectories());
+    // Distribution et celles dont elle dérive (ID et ID_LIKE de /etc/os-release).
+    static QStringList distributionIds(const QString &osReleasePath = QStringLiteral("/etc/os-release"));
     // Commande d'installation de clamonacc selon la distribution (/etc/os-release).
     static QString installCommand(const QString &osReleasePath = QStringLiteral("/etc/os-release"));
     // Valeurs de OnAccessIncludePath dans la configuration de clamonacc.
     static QStringList readWatchedPaths(const QString &configPath = QString::fromLatin1(kConfigPath));
     // Explication lisible d'une erreur écrite par clamonacc dans son journal.
     static QString explainError(const QString &logError);
+    static bool isInotifyLimitError(const QString &logError);
     // Chemin D-Bus d'une unité systemd (« a-b.service » -> « .../a_2db_2eservice »).
     static QString unitObjectPath(const QString &unitName);
 
@@ -97,6 +109,7 @@ private:
     QDBusConnection m_bus;
     OnAccessLog m_log;
     QStringList m_searchDirectories = defaultSearchDirectories();
+    std::function<bool(const OnAccessDetection &)> m_ignoreDetection;
     QString m_clamonacc;
     QStringList m_watchedPaths;
     QVariantMap m_unit;            // propriétés systemd du service de Linux Defender

@@ -141,10 +141,19 @@ QIcon resultIcon(ScanResult::Status status)
         return svgIcon(QStringLiteral(":/icons/status-ok.svg"));
     case ScanResult::Status::Infected:
         return threatIcon();
+    case ScanResult::Status::Suspicious:
+        return svgIcon(QStringLiteral(":/icons/result-suspicious.svg"));
+    case ScanResult::Status::Unscanned:
+        return svgIcon(QStringLiteral(":/icons/result-unscanned.svg"));
     case ScanResult::Status::Error:
         break;
     }
     return svgIcon(QStringLiteral(":/icons/result-warning.svg"));
+}
+
+QIcon quarantineIcon()
+{
+    return QIcon::fromTheme(QStringLiteral("folder-locked"), svgIcon(QStringLiteral(":/icons/status-ok.svg")));
 }
 
 QString resultText(ScanResult::Status status)
@@ -154,6 +163,10 @@ QString resultText(ScanResult::Status status)
         return tr("Sain");
     case ScanResult::Status::Infected:
         return tr("Infecté");
+    case ScanResult::Status::Suspicious:
+        return tr("Suspect");
+    case ScanResult::Status::Unscanned:
+        return tr("Non analysé");
     case ScanResult::Status::Error:
         break;
     }
@@ -166,6 +179,10 @@ QString summaryText(const ScanSummary &summary)
     parts << plural(summary.scanned, "%1 fichier analysé", "%1 fichiers analysés");
     parts << (summary.infected == 0 ? tr("aucune menace")
                                     : plural(summary.infected, "%1 menace détectée", "%1 menaces détectées"));
+    if (summary.suspicious > 0)
+        parts << plural(summary.suspicious, "%1 fichier suspect", "%1 fichiers suspects");
+    if (summary.unscanned > 0)
+        parts << plural(summary.unscanned, "%1 fichier non analysé par clamd", "%1 fichiers non analysés par clamd");
     if (summary.errors > 0)
         parts << plural(summary.errors, "%1 erreur", "%1 erreurs");
     if (summary.skipped > 0)
@@ -195,6 +212,8 @@ QString originText(ScanManager::Origin origin)
         return tr("Analyse complète");
     case ScanManager::Origin::Usb:
         return tr("Clé USB");
+    case ScanManager::Origin::Scheduled:
+        return tr("Analyse planifiée");
     case ScanManager::Origin::Manual:
         break;
     }
@@ -204,7 +223,8 @@ QString originText(ScanManager::Origin origin)
 QString targetText(ScanManager::Origin origin, const QStringList &paths)
 {
     // Analyse rapide : les noms des dossiers parlent plus que leurs chemins.
-    if (origin == ScanManager::Origin::Quick && paths.size() > 1 && paths.size() <= 4) {
+    const bool quick = origin == ScanManager::Origin::Quick || origin == ScanManager::Origin::Scheduled;
+    if (quick && paths.size() > 1 && paths.size() <= 4) {
         QStringList names;
         for (const QString &path : paths)
             names << QFileInfo(path).fileName();
@@ -213,11 +233,21 @@ QString targetText(ScanManager::Origin origin, const QStringList &paths)
     return pathsText(paths);
 }
 
+QString quickScanText(const QStringList &paths, bool systemAreas)
+{
+    const QString folders = targetText(ScanManager::Origin::Quick, paths);
+    return systemAreas ? tr("%1, démarrage automatique, fichiers temporaires et programmes en cours").arg(folders)
+                       : folders;
+}
+
 Level summaryLevel(const ScanSummary &summary)
 {
     if (summary.infected > 0)
         return Level::Negative;
-    if (!summary.fatalError.isEmpty() || summary.errors > 0 || summary.cancelled)
+    // Les fichiers non analysés (archives chiffrées, fichiers trop gros) sont
+    // cités dans le bilan sans le colorer : un dossier de téléchargements en
+    // contient souvent, et un bandeau toujours orange ne signalerait plus rien.
+    if (!summary.fatalError.isEmpty() || summary.errors > 0 || summary.suspicious > 0 || summary.cancelled)
         return Level::Warning;
     return Level::Positive;
 }
@@ -249,6 +279,28 @@ QString durationText(qint64 msecs)
     if (seconds < 3600)
         return tr("%1 min %2 s").arg(seconds / 60).arg(seconds % 60, 2, 10, QLatin1Char('0'));
     return tr("%1 h %2 min").arg(seconds / 3600).arg((seconds % 3600) / 60, 2, 10, QLatin1Char('0'));
+}
+
+Level diagnosticLevel(DiagnosticItem::Level level)
+{
+    switch (level) {
+    case DiagnosticItem::Level::Ok:
+        return Level::Positive;
+    case DiagnosticItem::Level::Warning:
+        return Level::Warning;
+    case DiagnosticItem::Level::Error:
+        return Level::Negative;
+    case DiagnosticItem::Level::Info:
+        break;
+    }
+    return Level::Neutral;
+}
+
+QIcon diagnosticIcon(DiagnosticItem::Level level)
+{
+    if (level == DiagnosticItem::Level::Info)
+        return QIcon::fromTheme(QStringLiteral("dialog-information"), levelIcon(Level::Neutral));
+    return levelIcon(diagnosticLevel(level));
 }
 
 QIcon onAccessIcon(OnAccessController::State state)

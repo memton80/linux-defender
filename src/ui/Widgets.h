@@ -48,6 +48,7 @@ class PlaceholderStack : public QStackedWidget
 
 public:
     PlaceholderStack(QAbstractItemView *view, const QString &placeholder, QWidget *parent = nullptr);
+    ~PlaceholderStack() override;
 
     void setPlaceholderText(const QString &text);
 

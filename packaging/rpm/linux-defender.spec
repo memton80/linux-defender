@@ -31,12 +31,14 @@ Requires:       hicolor-icon-theme
 Recommends:     clamd
 Recommends:     clamav-update
 Recommends:     udisks2
+# pkexec : corrections du diagnostic et case de la protection en temps réel.
+Recommends:     polkit
 
 %description
 Linux Defender is a native Qt 6 (QtWidgets) front-end for the ClamAV daemon
 (clamd), designed for KDE Plasma and its Breeze theme: dashboard, quick, full
 and custom scans, automatic scan of USB keys when they are mounted, scan
-history, real-time protection (clamonacc, enabled at installation), system tray
+history, quarantine, real-time protection (clamonacc, enabled at installation), system tray
 icon showing the clamd status, with desktop notifications.
 
 Files are opened by the application and passed to clamd (FILDES), so clamd can
@@ -46,7 +48,7 @@ scan the home directory and removable media without reading them itself.
 Linux Defender est une interface Qt 6 (QtWidgets) native pour le démon de
 ClamAV (clamd), pensée pour KDE Plasma et son thème Breeze : tableau de bord,
 analyses rapide, complète ou personnalisée, analyse automatique des clés USB au
-montage, historique des analyses, protection en temps réel (clamonacc, activée
+montage, historique des analyses, quarantaine, protection en temps réel (clamonacc, activée
 à l'installation), icône dans la zone de notification avec l'état de clamd et
 des notifications.
 
@@ -133,12 +135,21 @@ fi
 %{_bindir}/%{name}
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
+# Menu contextuel de Dolphin ; dossiers possédés aussi : KDE n'est pas requis.
+%dir %{_datadir}/kio
+%dir %{_datadir}/kio/servicemenus
+%{_datadir}/kio/servicemenus/%{name}-scan.desktop
 %{_mandir}/man1/%{name}.1*
 %{_unitdir}/linux-defender-onaccess.service
 %{_presetdir}/80-linux-defender.preset
 %dir %{_sysconfdir}/linux-defender
 %config(noreplace) %{_sysconfdir}/linux-defender/clamonacc.conf
 %config(noreplace) %{_sysconfdir}/logrotate.d/linux-defender
+%{_libexecdir}/linux-defender-helper
+# Action polkit ; dossiers possédés aussi : polkit n'est que recommandé.
+%dir %{_datadir}/polkit-1
+%dir %{_datadir}/polkit-1/actions
+%{_datadir}/polkit-1/actions/io.github.memton80.linux-defender.policy
 
 %changelog
 * Thu Sep 24 2026 memton80 <memton80@users.noreply.github.com> - 1.0.2-1

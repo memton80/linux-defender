@@ -5,6 +5,7 @@
 class Card;
 class HistoryModel;
 class PlaceholderStack;
+class Quarantine;
 class QLabel;
 class QPushButton;
 class QTreeView;
@@ -20,7 +21,7 @@ class HistoryPanel : public QWidget
     Q_OBJECT
 
 public:
-    explicit HistoryPanel(ScanHistory *history, QWidget *parent = nullptr);
+    HistoryPanel(ScanHistory *history, Quarantine *quarantine, QWidget *parent = nullptr);
 
     // Sélectionne l'analyse la plus récente.
     void selectLatest();
@@ -34,6 +35,7 @@ private:
     void clearHistory();
 
     ScanHistory *m_history;
+    Quarantine *m_quarantine;
     HistoryModel *m_model;
     QLabel *m_info;
     QPushButton *m_clearButton;

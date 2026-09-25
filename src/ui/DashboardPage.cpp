@@ -5,9 +5,11 @@
 #include "core/ScanHistory.h"
 #include "core/Settings.h"
 #include "system/OnAccessController.h"
+#include "system/ScanSchedule.h"
 
 #include <QCommandLinkButton>
 #include <QDir>
+#include <QFileInfo>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -55,6 +57,16 @@ QString onAccessShortTitle(OnAccessController::State state)
     return DashboardPage::tr("État inconnu");
 }
 
+// Toutes les menaces de cette analyse ont-elles quitté leur emplacement
+// (mises en quarantaine, ou supprimées) ? Seulement si elles sont toutes
+// connues : l'historique n'en garde que les premières.
+bool threatsHandled(const ScanRecord &record)
+{
+    return record.infected > 0 && record.infected == record.threats.size()
+        && std::none_of(record.threats.cbegin(), record.threats.cend(),
+                        [](const ScanResult &threat) { return QFileInfo::exists(threat.path); });
+}
+
 QLabel *sectionTitle(const QString &text)
 {
     auto *label = new QLabel(text);
@@ -64,12 +76,13 @@ QLabel *sectionTitle(const QString &text)
 }
 
 DashboardPage::DashboardPage(ClamdWatcher *watcher, ScanManager *scans, OnAccessController *onAccess,
-                             ScanHistory *history, QWidget *parent)
+                             ScanHistory *history, SystemDiagnostics *diagnostics, QWidget *parent)
     : QWidget(parent)
     , m_watcher(watcher)
     , m_scans(scans)
     , m_onAccess(onAccess)
     , m_history(history)
+    , m_diagnostics(diagnostics)
 {
     // Bandeau d'état : grande icône, titre, explication, action la plus utile.
     m_bannerIcon = new QLabel;
@@ -95,6 +108,9 @@ DashboardPage::DashboardPage(ClamdWatcher *watcher, ScanManager *scans, OnAccess
             break;
         case BannerAction::ShowHistory:
             emit showHistoryRequested();
+            break;
+        case BannerAction::ShowDiagnostics:
+            emit showDiagnosticsRequested();
             break;
         case BannerAction::None:
             break;
@@ -197,6 +213,7 @@ DashboardPage::DashboardPage(ClamdWatcher *watcher, ScanManager *scans, OnAccess
     connect(m_watcher, &ClamdWatcher::checkFinished, this, &DashboardPage::updateTiles);
     connect(m_onAccess, &OnAccessController::stateChanged, this, &DashboardPage::refresh);
     connect(m_history, &ScanHistory::changed, this, &DashboardPage::refresh);
+    connect(m_diagnostics, &SystemDiagnostics::changed, this, &DashboardPage::refresh);
     connect(m_scans, &ScanManager::scanStarted, this, &DashboardPage::refresh);
     connect(m_scans, &ScanManager::scanFinished, this, &DashboardPage::refresh);
     connect(m_scans, &ScanManager::counting, this, [this] { m_scanProgress->setRange(0, 0); });
@@ -295,21 +312,24 @@ void DashboardPage::updateBanner()
         level = Level::Negative;
         title = tr("Antivirus indisponible");
         text = tr("clamd ne répond pas : aucune analyse n'est possible.\n%1").arg(m_watcher->errorMessage());
-        action = BannerAction::Check;
-        actionText = tr("Vérifier maintenant");
+        // Le diagnostic donne la cause précise et, souvent, la correction.
+        action = BannerAction::ShowDiagnostics;
+        actionText = tr("Résoudre le problème");
     } else if (m_realtimeThreats > 0) {
         level = Level::Negative;
         title = m_realtimeThreats > 1 ? tr("%1 menaces détectées en temps réel").arg(m_realtimeThreats)
                                       : tr("Menace détectée en temps réel");
         text = tr("La protection en temps réel a signalé des fichiers infectés depuis le lancement.\n"
-                  "Les fichiers n'ont été ni supprimés ni déplacés : vérifiez-les.");
+                  "Ils sont toujours en place : mettez-les en quarantaine (bouton de l'alerte, ou clic droit sur la "
+                  "détection).");
         action = BannerAction::ShowOnAccess;
         actionText = tr("Voir les détections");
-    } else if (last && last->infected > 0) {
+    } else if (last && last->infected > 0 && !threatsHandled(*last)) {
         level = Level::Negative;
         title = last->infected > 1 ? tr("%1 menaces détectées").arg(number(last->infected)) : tr("Menace détectée");
         text = tr("Dernière analyse : %1, %2.\n"
-                  "Les fichiers n'ont été ni supprimés ni déplacés : vérifiez-les, puis relancez une analyse.")
+                  "Les fichiers sont toujours en place : mettez-les en quarantaine (clic droit sur la menace), puis "
+                  "relancez une analyse.")
                    .arg(StatusDisplay::originText(last->origin), StatusDisplay::relativeTime(last->started));
         action = BannerAction::ShowHistory;
         actionText = tr("Voir les menaces");
@@ -318,23 +338,50 @@ void DashboardPage::updateBanner()
         title = StatusDisplay::title(clamd);
         action = BannerAction::None;
     } else {
-        QStringList warnings;
+        // Points d'attention, chacun avec l'action qui y répond ; le bouton
+        // propose celle du premier.
+        QList<QPair<QString, BannerAction>> warnings;
         const ClamdVersion version = m_watcher->version();
         if (StatusDisplay::signaturesOutdated(version, Settings::signaturesMaxAge()))
-            warnings << tr("Les signatures datent de %1 jours : vérifiez que freshclam les met à jour.")
-                            .arg(StatusDisplay::signaturesAgeDays(version));
+            warnings.append({tr("Les signatures datent de %1 jours : vérifiez que freshclam les met à jour.")
+                                 .arg(StatusDisplay::signaturesAgeDays(version)),
+                             BannerAction::ShowDiagnostics});
         if (onAccess == OnAccessController::State::Failed)
-            warnings << tr("La protection en temps réel est en erreur.");
+            warnings.append({tr("La protection en temps réel est en erreur."), BannerAction::ShowOnAccess});
+        // Problème relevé par le diagnostic seul (SELinux...) : clamd, signatures
+        // et temps réel sont déjà traités ci-dessus.
+        if (const std::optional<DiagnosticItem> problem = m_diagnostics->mostSevere();
+            problem && problem->id != QLatin1String("clamd") && problem->id != QLatin1String("signatures")
+            && problem->id != QLatin1String("onaccess"))
+            warnings.append({problem->title + QLatin1Char('.'), BannerAction::ShowDiagnostics});
         if (last && !last->fatalError.isEmpty())
-            warnings << tr("La dernière analyse n'a pas pu aller au bout.");
+            warnings.append({tr("La dernière analyse n'a pas pu aller au bout."), BannerAction::ShowHistory});
+        if (last && last->suspicious > 0)
+            warnings.append({last->suspicious > 1
+                                 ? tr("La dernière analyse a trouvé %1 fichiers suspects : vérifiez-les.")
+                                       .arg(number(last->suspicious))
+                                 : tr("La dernière analyse a trouvé un fichier suspect : vérifiez-le."),
+                             BannerAction::ShowHistory});
 
         if (!warnings.isEmpty()) {
             level = Level::Warning;
             title = tr("Attention requise");
-            text = warnings.join(QLatin1Char('\n'));
-            if (onAccess == OnAccessController::State::Failed) {
-                action = BannerAction::ShowOnAccess;
+            QStringList lines;
+            for (const auto &warning : std::as_const(warnings))
+                lines << warning.first;
+            text = lines.join(QLatin1Char('\n'));
+            action = warnings.first().second;
+            switch (action) {
+            case BannerAction::ShowDiagnostics:
+                actionText = tr("Résoudre");
+                break;
+            case BannerAction::ShowOnAccess:
                 actionText = tr("Voir le détail");
+                break;
+            default:
+                action = BannerAction::ShowHistory;
+                actionText = tr("Voir l'analyse");
+                break;
             }
         } else if (onAccess == OnAccessController::State::Active) {
             title = tr("Votre système est protégé");
@@ -344,6 +391,8 @@ void DashboardPage::updateBanner()
             text = tr("clamd répond et les signatures sont à jour.\n"
                       "Sans protection en temps réel, les menaces sont détectées lors des analyses.");
         }
+        if (warnings.isEmpty() && last && threatsHandled(*last))
+            text += QLatin1Char('\n') + tr("Les menaces de la dernière analyse ont été mises en quarantaine ou supprimées.");
     }
 
     m_bannerAction = action;
@@ -423,6 +472,10 @@ void DashboardPage::updateTiles()
         counts << (last->infected == 0 ? tr("aucune menace")
                                        : last->infected > 1 ? tr("%1 menaces").arg(number(last->infected))
                                                             : tr("1 menace"));
+        if (last->suspicious > 0)
+            counts << (last->suspicious > 1 ? tr("%1 suspects").arg(number(last->suspicious)) : tr("1 suspect"));
+        if (last->unscanned > 0)
+            counts << (last->unscanned > 1 ? tr("%1 non analysés").arg(number(last->unscanned)) : tr("1 non analysé"));
         if (last->errors > 0)
             counts << (last->errors > 1 ? tr("%1 erreurs").arg(number(last->errors)) : tr("1 erreur"));
         setTile(m_lastScanTile, last->infected > 0 ? StatusDisplay::threatIcon() : StatusDisplay::levelIcon(level),
@@ -431,6 +484,17 @@ void DashboardPage::updateTiles()
     } else {
         setTile(m_lastScanTile, StatusDisplay::levelIcon(StatusDisplay::Level::Neutral), tr("Jamais"),
                 tr("Lancez une analyse rapide pour vérifier vos derniers fichiers."));
+    }
+    // Analyse planifiée : quand aura lieu la prochaine.
+    const auto frequency = ScanSchedule::Frequency(Settings::scheduleFrequency());
+    const QDateTime now = QDateTime::currentDateTime();
+    const QDateTime next = ScanSchedule::nextRun(Settings::scheduleLastRun(), now, frequency);
+    if (next.isValid()) {
+        const QString when = next <= now ? tr("dès que possible")
+                                         : tr("%1 à %2").arg(QLocale().toString(next.date(), QLocale::ShortFormat),
+                                                             QLocale().toString(next.time(), QLocale::ShortFormat));
+        m_lastScanTile.detail->setText(m_lastScanTile.detail->text() + QLatin1Char('\n')
+                                       + tr("Prochaine analyse planifiée : %1").arg(when));
     }
 
     // Clés USB.
@@ -476,7 +540,7 @@ void DashboardPage::updateScanCard()
                                  : tr("%1 en cours : %2").arg(StatusDisplay::originText(origin), target));
     }
 
-    m_quickButton->setDescription(StatusDisplay::targetText(ScanManager::Origin::Quick, Settings::quickScanPaths()));
+    m_quickButton->setDescription(StatusDisplay::quickScanText(m_scans->quickScanPaths(), m_scans->quickScanSystemAreas()));
     for (QCommandLinkButton *button : {m_quickButton, m_fullButton, m_folderButton, m_filesButton})
         button->setEnabled(!scanning);
 }

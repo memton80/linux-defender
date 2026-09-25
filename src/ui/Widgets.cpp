@@ -88,6 +88,13 @@ PlaceholderStack::PlaceholderStack(QAbstractItemView *view, const QString &place
     refresh();
 }
 
+PlaceholderStack::~PlaceholderStack()
+{
+    // La liste (enfant) est détruite après : un QTreeWidget vide alors son
+    // modèle, dont les signaux ne doivent plus arriver ici.
+    disconnect(m_view->model(), nullptr, this, nullptr);
+}
+
 void PlaceholderStack::setPlaceholderText(const QString &text)
 {
     m_placeholder->setText(text);

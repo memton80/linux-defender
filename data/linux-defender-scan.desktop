@@ -1,0 +1,17 @@
+# Menu contextuel de Dolphin (KDE) : « Analyser avec Linux Defender » sur les
+# fichiers et dossiers sélectionnés. Installé dans share/kio/servicemenus/.
+# Fichiers locaux seulement : l'application les ouvre elle-même pour clamd.
+[Desktop Entry]
+Type=Service
+X-KDE-ServiceTypes=KonqPopupMenu/Plugin
+MimeType=all/all;
+X-KDE-Protocols=file
+X-KDE-Priority=TopLevel
+Actions=scan;
+Icon=linux-defender
+
+[Desktop Action scan]
+Name=Scan with Linux Defender
+Name[fr]=Analyser avec Linux Defender
+Icon=linux-defender
+Exec=linux-defender --scan %F

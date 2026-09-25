@@ -4,6 +4,7 @@
 #include "ScanResultsModel.h"
 #include "StatusDisplay.h"
 #include "Widgets.h"
+#include "core/Quarantine.h"
 #include "core/ScanHistory.h"
 #include "core/Settings.h"
 
@@ -11,6 +12,7 @@
 #include <QDate>
 #include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -65,19 +67,22 @@ QByteArray csvField(QString text)
     return '"' + text.toUtf8() + '"';
 }
 
-// Filtres de la liste, dans l'ordre des boutons.
-const std::optional<ScanResult::Status> kFilterStatuses[] = {
-    std::nullopt,
-    ScanResult::Status::Infected,
-    ScanResult::Status::Error,
-    ScanResult::Status::Clean,
+// Filtres de la liste, dans l'ordre des boutons (liste vide : tous les statuts).
+enum Filter { AllFilter, ThreatsFilter, WarningsFilter, ErrorsFilter, CleanFilter, FilterCount };
+const QList<ScanResult::Status> kFilterStatuses[FilterCount] = {
+    {},
+    {ScanResult::Status::Infected},
+    {ScanResult::Status::Suspicious, ScanResult::Status::Unscanned},
+    {ScanResult::Status::Error},
+    {ScanResult::Status::Clean},
 };
 }
 
-ScanPanel::ScanPanel(ScanManager *scans, ScanHistory *history, QWidget *parent)
+ScanPanel::ScanPanel(ScanManager *scans, ScanHistory *history, Quarantine *quarantine, QWidget *parent)
     : QWidget(parent)
     , m_scans(scans)
     , m_history(history)
+    , m_quarantine(quarantine)
     , m_model(new ScanResultsModel(this))
     , m_filter(new ScanResultsFilter(this))
 {
@@ -119,9 +124,19 @@ ScanPanel::ScanPanel(ScanManager *scans, ScanHistory *history, QWidget *parent)
     auto *activityTexts = new QVBoxLayout;
     activityTexts->addWidget(m_activityTitle);
     activityTexts->addWidget(m_activityDetail);
+    // Menaces encore en place après l'analyse : les mettre en quarantaine d'un clic.
+    m_quarantineButton = new QPushButton(StatusDisplay::quarantineIcon(), QString());
+    m_quarantineButton->setToolTip(tr("Retire les fichiers infectés de leur emplacement et les rend inertes ; ils "
+                                      "restent restaurables depuis la page « Quarantaine »"));
+    connect(m_quarantineButton, &QPushButton::clicked, this, [this] { m_quarantine->add(m_model->threatsToQuarantine()); });
+    m_model->setQuarantine(m_quarantine);
+    connect(m_quarantine, &Quarantine::changed, this, &ScanPanel::updateButtons);
+    connect(m_quarantine, &Quarantine::idle, this, &ScanPanel::updateButtons);
+
     auto *activityHeader = new QHBoxLayout;
     activityHeader->addWidget(m_activityIcon, 0, Qt::AlignTop);
     activityHeader->addLayout(activityTexts, 1);
+    activityHeader->addWidget(m_quarantineButton, 0, Qt::AlignTop);
 
     m_progress = new QProgressBar;
     m_progress->setVisible(false);
@@ -140,19 +155,24 @@ ScanPanel::ScanPanel(ScanManager *scans, ScanHistory *history, QWidget *parent)
     auto *stats = new QHBoxLayout;
     stats->addWidget(statTile(tr("Fichiers analysés"), &m_scannedValue));
     stats->addWidget(statTile(tr("Menaces"), &m_threatsValue));
+    Card *warningsTile = statTile(tr("Avertissements"), &m_warningsValue);
+    warningsTile->setToolTip(tr("Fichiers suspects (détection heuristique, programme potentiellement indésirable) "
+                                "et fichiers que clamd n'a pas pu analyser (archive chiffrée, fichier trop gros)"));
+    stats->addWidget(warningsTile);
     stats->addWidget(statTile(tr("Erreurs"), &m_errorsValue));
     stats->addWidget(statTile(tr("Durée"), &m_durationValue));
 
     // Filtres de la liste : statut, recherche.
     m_filterGroup = new QButtonGroup(this);
-    const QIcon filterIcons[] = {
+    const QIcon filterIcons[FilterCount] = {
         QIcon(),
         StatusDisplay::threatIcon(),
+        StatusDisplay::resultIcon(ScanResult::Status::Suspicious),
         StatusDisplay::resultIcon(ScanResult::Status::Error),
         StatusDisplay::resultIcon(ScanResult::Status::Clean),
     };
     auto *filters = new QHBoxLayout;
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < FilterCount; ++i) {
         auto *button = new QToolButton;
         button->setCheckable(true);
         button->setAutoRaise(true);
@@ -164,7 +184,7 @@ ScanPanel::ScanPanel(ScanManager *scans, ScanHistory *history, QWidget *parent)
     }
     m_filterButtons.first()->setChecked(true);
     connect(m_filterGroup, &QButtonGroup::idClicked, this, [this](int id) {
-        m_filter->setStatus(kFilterStatuses[id]);
+        m_filter->setStatuses(kFilterStatuses[id]);
         updatePlaceholder();
     });
 
@@ -210,7 +230,11 @@ ScanPanel::ScanPanel(ScanManager *scans, ScanHistory *history, QWidget *parent)
     // Largeurs initiales tirées de la police du système, pas de valeurs en pixels.
     const int charWidth = fontMetrics().averageCharWidth();
     const int iconWidth = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
-    header->resizeSection(ScanResultsModel::StatusColumn, iconWidth + 12 * charWidth);
+    int statusWidth = fontMetrics().horizontalAdvance(ScanResultsModel::tr("En quarantaine"));
+    for (int status = 0; status < ScanResult::kStatusCount; ++status)
+        statusWidth = qMax(statusWidth, fontMetrics().horizontalAdvance(StatusDisplay::resultText(ScanResult::Status(status))));
+    // Le texte en gras (menaces) est un peu plus large : marge de 4 caractères.
+    header->resizeSection(ScanResultsModel::StatusColumn, iconWidth + statusWidth + 4 * charWidth);
     header->resizeSection(ScanResultsModel::DetailColumn, 40 * charWidth);
     m_viewStack = new PlaceholderStack(m_view, QString());
 
@@ -264,7 +288,7 @@ void ScanPanel::chooseFolder()
 
 void ScanPanel::startQuickScan()
 {
-    m_scans->scan(Settings::quickScanPaths(), ScanManager::Origin::Quick);
+    m_scans->quickScan();
 }
 
 void ScanPanel::startFullScan()
@@ -304,7 +328,7 @@ void ScanPanel::onScanStarted(const QStringList &paths, ScanManager::Origin orig
 
     m_elapsed.start();
     m_clock.start();
-    setStats(number(0), number(0), number(0), StatusDisplay::durationText(0));
+    setStats(number(0), number(0), number(0), number(0), StatusDisplay::durationText(0));
     onCounting(0);
     updateFilterButtons();
     updateButtons();
@@ -339,6 +363,8 @@ void ScanPanel::onResults(const QList<ScanResult> &results)
     m_currentFile->setText(m_currentFile->fontMetrics().elidedText(path, Qt::ElideMiddle, m_currentFile->width()));
     m_currentFile->setToolTip(path);
     m_threatsValue->setText(number(m_counts[int(ScanResult::Status::Infected)]));
+    m_warningsValue->setText(number(m_counts[int(ScanResult::Status::Suspicious)]
+                                    + m_counts[int(ScanResult::Status::Unscanned)]));
     m_errorsValue->setText(number(m_counts[int(ScanResult::Status::Error)]));
     updateFilterButtons();
     updateButtons();
@@ -378,8 +404,8 @@ void ScanPanel::showSummary(const ScanSummary &summary, ScanManager::Origin orig
     m_currentFile->setVisible(false);
     m_limitNote->setVisible(m_model->unlistedCleanCount() > 0);
 
-    setStats(number(summary.scanned), number(summary.infected), number(summary.errors),
-             StatusDisplay::durationText(summary.elapsedMsecs));
+    setStats(number(summary.scanned), number(summary.infected), number(summary.suspicious + summary.unscanned),
+             number(summary.errors), StatusDisplay::durationText(summary.elapsedMsecs));
 }
 
 void ScanPanel::showIdle()
@@ -390,15 +416,18 @@ void ScanPanel::showIdle()
     m_activityTitle->setText(tr("Aucune analyse pour l'instant"));
     m_activityDetail->setText(tr("L'analyse rapide vérifie en quelques instants les dossiers où arrivent les "
                                  "nouveaux fichiers : %1.")
-                                  .arg(StatusDisplay::targetText(ScanManager::Origin::Quick, Settings::quickScanPaths())));
+                                  .arg(StatusDisplay::quickScanText(m_scans->quickScanPaths(),
+                                                                    m_scans->quickScanSystemAreas())));
     const QString none = QStringLiteral("—");
-    setStats(none, none, none, none);
+    setStats(none, none, none, none, none);
 }
 
-void ScanPanel::setStats(const QString &scanned, const QString &threats, const QString &errors, const QString &duration)
+void ScanPanel::setStats(const QString &scanned, const QString &threats, const QString &warnings,
+                         const QString &errors, const QString &duration)
 {
     m_scannedValue->setText(scanned);
     m_threatsValue->setText(threats);
+    m_warningsValue->setText(warnings);
     m_errorsValue->setText(errors);
     m_durationValue->setText(duration);
 }
@@ -412,11 +441,14 @@ void ScanPanel::updateFilterButtons()
 {
     const qint64 clean = m_counts[int(ScanResult::Status::Clean)];
     const qint64 infected = m_counts[int(ScanResult::Status::Infected)];
+    const qint64 warnings = m_counts[int(ScanResult::Status::Suspicious)] + m_counts[int(ScanResult::Status::Unscanned)];
     const qint64 errors = m_counts[int(ScanResult::Status::Error)];
-    m_filterButtons.at(0)->setText(tr("Tous (%1)").arg(number(clean + infected + errors)));
-    m_filterButtons.at(1)->setText(tr("Menaces (%1)").arg(number(infected)));
-    m_filterButtons.at(2)->setText(tr("Erreurs (%1)").arg(number(errors)));
-    m_filterButtons.at(3)->setText(tr("Sains (%1)").arg(number(clean)));
+    m_filterButtons.at(AllFilter)->setText(tr("Tous (%1)").arg(number(clean + infected + warnings + errors)));
+    m_filterButtons.at(ThreatsFilter)->setText(tr("Menaces (%1)").arg(number(infected)));
+    m_filterButtons.at(WarningsFilter)->setText(tr("Avertissements (%1)").arg(number(warnings)));
+    m_filterButtons.at(WarningsFilter)->setToolTip(tr("Fichiers suspects, et fichiers que clamd n'a pas pu analyser"));
+    m_filterButtons.at(ErrorsFilter)->setText(tr("Erreurs (%1)").arg(number(errors)));
+    m_filterButtons.at(CleanFilter)->setText(tr("Sains (%1)").arg(number(clean)));
 }
 
 void ScanPanel::updatePlaceholder()
@@ -429,10 +461,13 @@ void ScanPanel::updatePlaceholder()
         text = tr("Aucun fichier ne correspond à « %1 ».").arg(m_search->text().trimmed());
     } else {
         switch (m_filterGroup->checkedId()) {
-        case 1:
+        case ThreatsFilter:
             text = tr("Aucune menace détectée.");
             break;
-        case 2:
+        case WarningsFilter:
+            text = tr("Aucun fichier suspect ou non analysé.");
+            break;
+        case ErrorsFilter:
             text = tr("Aucune erreur.");
             break;
         default:
@@ -452,7 +487,16 @@ void ScanPanel::updateButtons()
     m_fileButton->setEnabled(!scanning);
     m_stopButton->setEnabled(scanning);
     m_exportButton->setEnabled(!scanning && m_model->rowCount() > 0);
-    m_quickButton->setToolTip(tr("Analyse de : %1").arg(Settings::quickScanPaths().join(QStringLiteral(", "))));
+    const qsizetype threats = m_model->threatsToQuarantine().size();
+    m_quarantineButton->setText(threats > 1 ? tr("Mettre les %1 menaces en quarantaine").arg(threats)
+                                            : tr("Mettre la menace en quarantaine"));
+    m_quarantineButton->setVisible(threats > 0 && !scanning);
+    m_quarantineButton->setEnabled(!m_quarantine->isBusy());
+    QString quickTip = tr("Analyse de : %1").arg(m_scans->quickScanPaths().join(QStringLiteral(", ")));
+    if (m_scans->quickScanSystemAreas())
+        quickTip += QLatin1Char('\n') + tr("Et : démarrage automatique, scripts du shell, ~/.local/bin, /tmp, "
+                                           "/var/tmp, /dev/shm, programmes en cours d'exécution");
+    m_quickButton->setToolTip(quickTip);
 }
 
 void ScanPanel::showContextMenu(const QPoint &position)
@@ -460,11 +504,16 @@ void ScanPanel::showContextMenu(const QPoint &position)
     const QModelIndex index = m_view->indexAt(position);
     if (!index.isValid())
         return;
-    const bool infected = index.data(ScanResultsModel::StatusRole).toInt() == int(ScanResult::Status::Infected);
-    FileActions::execContextMenu(this, m_view->viewport()->mapToGlobal(position),
-                                 index.siblingAtColumn(ScanResultsModel::PathColumn).data().toString(),
-                                 index.siblingAtColumn(ScanResultsModel::DetailColumn).data().toString(),
-                                 infected ? tr("Copier le nom de la menace") : tr("Copier le message d'erreur"));
+    const auto status = ScanResult::Status(index.data(ScanResultsModel::StatusRole).toInt());
+    const bool threat = status == ScanResult::Status::Infected || status == ScanResult::Status::Suspicious;
+    const QString path = index.siblingAtColumn(ScanResultsModel::PathColumn).data().toString();
+    const QString detail = index.siblingAtColumn(ScanResultsModel::DetailColumn).data().toString();
+    // Quarantaine : menaces et fichiers suspects encore en place.
+    std::function<void()> quarantine;
+    if (threat && !index.data(ScanResultsModel::QuarantinedRole).toBool() && QFileInfo::exists(path))
+        quarantine = [this, path, detail] { m_quarantine->add({{path, detail}}); };
+    FileActions::execContextMenu(this, m_view->viewport()->mapToGlobal(position), path, detail,
+                                 threat ? tr("Copier le nom de la menace") : tr("Copier le détail"), quarantine);
 }
 
 void ScanPanel::exportResults()
@@ -477,7 +526,7 @@ void ScanPanel::exportResults()
         return;
 
     // La liste telle qu'elle est affichée : filtre et tri compris.
-    QByteArray csv = csvField(tr("Statut")) + ',' + csvField(tr("Fichier")) + ',' + csvField(tr("Menace ou erreur")) + '\n';
+    QByteArray csv = csvField(tr("Statut")) + ',' + csvField(tr("Fichier")) + ',' + csvField(tr("Détail")) + '\n';
     for (int row = 0; row < m_filter->rowCount(); ++row) {
         csv += csvField(m_filter->index(row, ScanResultsModel::StatusColumn).data().toString()) + ','
             + csvField(m_filter->index(row, ScanResultsModel::PathColumn).data().toString()) + ','

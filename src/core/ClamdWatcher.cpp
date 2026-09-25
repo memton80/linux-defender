@@ -8,10 +8,10 @@ ClamdWatcher::ClamdWatcher(ClamdClient *client, QObject *parent)
     connect(&m_timer, &QTimer::timeout, this, &ClamdWatcher::checkNow);
 
     connect(m_client, &ClamdClient::versionReceived, this, [this](const ClamdVersion &version) {
-        finishCheck(State::Connected, version, {});
+        finishCheck(State::Connected, version, ClamdClient::Error::NoError, {});
     });
-    connect(m_client, &ClamdClient::errorOccurred, this, [this](ClamdClient::Error, const QString &message) {
-        finishCheck(State::Error, {}, message);
+    connect(m_client, &ClamdClient::errorOccurred, this, [this](ClamdClient::Error error, const QString &message) {
+        finishCheck(State::Error, {}, error, message);
     });
 }
 
@@ -28,6 +28,11 @@ ClamdVersion ClamdWatcher::version() const
 QString ClamdWatcher::errorMessage() const
 {
     return m_errorMessage;
+}
+
+ClamdClient::Error ClamdWatcher::error() const
+{
+    return m_error;
 }
 
 QDateTime ClamdWatcher::lastCheck() const
@@ -59,14 +64,16 @@ void ClamdWatcher::checkNow()
     m_client->version();
 }
 
-void ClamdWatcher::finishCheck(State state, const ClamdVersion &version, const QString &errorMessage)
+void ClamdWatcher::finishCheck(State state, const ClamdVersion &version, ClamdClient::Error error,
+                               const QString &errorMessage)
 {
     m_checking = false;
     m_lastCheck = QDateTime::currentDateTime();
 
-    const bool changed = state != m_state || version != m_version || errorMessage != m_errorMessage;
+    const bool changed = state != m_state || version != m_version || error != m_error || errorMessage != m_errorMessage;
     m_state = state;
     m_version = version;
+    m_error = error;
     m_errorMessage = errorMessage;
 
     if (changed)

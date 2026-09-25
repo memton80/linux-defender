@@ -23,10 +23,30 @@ QString originKey(ScanManager::Origin origin)
         return QStringLiteral("quick");
     case ScanManager::Origin::Full:
         return QStringLiteral("full");
+    case ScanManager::Origin::Scheduled:
+        return QStringLiteral("scheduled");
     case ScanManager::Origin::Manual:
         break;
     }
     return QStringLiteral("manual");
+}
+
+// Statut d'un avertissement dans le fichier (les menaces ont leur propre liste).
+QString warningKey(ScanResult::Status status)
+{
+    return status == ScanResult::Status::Suspicious ? QStringLiteral("suspicious") : QStringLiteral("unscanned");
+}
+
+QJsonArray resultList(const QList<ScanResult> &results, bool withStatus)
+{
+    QJsonArray list;
+    for (const ScanResult &result : results) {
+        QJsonObject object{{QStringLiteral("path"), result.path}, {QStringLiteral("name"), result.detail}};
+        if (withStatus)
+            object.insert(QStringLiteral("status"), warningKey(result.status));
+        list.append(object);
+    }
+    return list;
 }
 
 ScanManager::Origin originFromKey(const QString &key)
@@ -37,6 +57,8 @@ ScanManager::Origin originFromKey(const QString &key)
         return ScanManager::Origin::Quick;
     if (key == QLatin1String("full"))
         return ScanManager::Origin::Full;
+    if (key == QLatin1String("scheduled"))
+        return ScanManager::Origin::Scheduled;
     return ScanManager::Origin::Manual;
 }
 }
@@ -48,13 +70,17 @@ ScanRecord ScanRecord::fromSummary(const ScanSummary &summary, ScanManager::Orig
     record.elapsedMsecs = summary.elapsedMsecs;
     record.origin = origin;
     record.paths = summary.paths;
+    record.systemAreas = summary.systemAreas;
     record.scanned = summary.scanned;
     record.infected = summary.infected;
+    record.suspicious = summary.suspicious;
+    record.unscanned = summary.unscanned;
     record.errors = summary.errors;
     record.skipped = summary.skipped;
     record.cancelled = summary.cancelled;
     record.fatalError = summary.fatalError;
     record.threats = summary.threats;
+    record.warnings = summary.warnings;
     return record;
 }
 
@@ -62,35 +88,39 @@ ScanSummary ScanRecord::toSummary() const
 {
     ScanSummary summary;
     summary.paths = paths;
+    summary.systemAreas = systemAreas;
     summary.started = started;
     summary.elapsedMsecs = elapsedMsecs;
     summary.scanned = scanned;
     summary.infected = infected;
+    summary.suspicious = suspicious;
+    summary.unscanned = unscanned;
     summary.errors = errors;
     summary.skipped = skipped;
     summary.cancelled = cancelled;
     summary.fatalError = fatalError;
     summary.threats = threats;
+    summary.warnings = warnings;
     return summary;
 }
 
 QJsonObject ScanRecord::toJson() const
 {
-    QJsonArray threatList;
-    for (const ScanResult &threat : threats)
-        threatList.append(QJsonObject{{QStringLiteral("path"), threat.path}, {QStringLiteral("name"), threat.detail}});
-
     QJsonObject object{
         {QStringLiteral("started"), started.toString(Qt::ISODateWithMs)},
         {QStringLiteral("elapsedMsecs"), elapsedMsecs},
         {QStringLiteral("origin"), originKey(origin)},
         {QStringLiteral("paths"), QJsonArray::fromStringList(paths)},
+        {QStringLiteral("systemAreas"), systemAreas},
         {QStringLiteral("scanned"), scanned},
         {QStringLiteral("infected"), infected},
+        {QStringLiteral("suspicious"), suspicious},
+        {QStringLiteral("unscanned"), unscanned},
         {QStringLiteral("errors"), errors},
         {QStringLiteral("skipped"), skipped},
         {QStringLiteral("cancelled"), cancelled},
-        {QStringLiteral("threats"), threatList},
+        {QStringLiteral("threats"), resultList(threats, false)},
+        {QStringLiteral("warnings"), resultList(warnings, true)},
     };
     if (!fatalError.isEmpty())
         object.insert(QStringLiteral("fatalError"), fatalError);
@@ -107,8 +137,12 @@ std::optional<ScanRecord> ScanRecord::fromJson(const QJsonObject &object)
     record.origin = originFromKey(object.value(QStringLiteral("origin")).toString());
     for (const QJsonValue &path : object.value(QStringLiteral("paths")).toArray())
         record.paths << path.toString();
+    record.systemAreas = object.value(QStringLiteral("systemAreas")).toBool();
     record.scanned = object.value(QStringLiteral("scanned")).toInteger();
     record.infected = object.value(QStringLiteral("infected")).toInteger();
+    // Absents des historiques écrits par les versions 1.0.x : 0 et liste vide.
+    record.suspicious = object.value(QStringLiteral("suspicious")).toInteger();
+    record.unscanned = object.value(QStringLiteral("unscanned")).toInteger();
     record.errors = object.value(QStringLiteral("errors")).toInteger();
     record.skipped = object.value(QStringLiteral("skipped")).toInteger();
     record.cancelled = object.value(QStringLiteral("cancelled")).toBool();
@@ -117,6 +151,13 @@ std::optional<ScanRecord> ScanRecord::fromJson(const QJsonObject &object)
         const QJsonObject threat = value.toObject();
         record.threats.append({threat.value(QStringLiteral("path")).toString(), ScanResult::Status::Infected,
                                threat.value(QStringLiteral("name")).toString()});
+    }
+    for (const QJsonValue &value : object.value(QStringLiteral("warnings")).toArray()) {
+        const QJsonObject warning = value.toObject();
+        const bool suspiciousWarning = warning.value(QStringLiteral("status")).toString() == QLatin1String("suspicious");
+        record.warnings.append({warning.value(QStringLiteral("path")).toString(),
+                                suspiciousWarning ? ScanResult::Status::Suspicious : ScanResult::Status::Unscanned,
+                                warning.value(QStringLiteral("name")).toString()});
     }
     return record;
 }

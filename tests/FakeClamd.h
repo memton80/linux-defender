@@ -12,6 +12,7 @@
 
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -23,8 +24,11 @@
  * traite une commande par connexion puis ferme la connexion.
  *
  * - FILDES : reçoit le descripteur (message SCM_RIGHTS), lit le fichier et
- *   répond comme clamd : « FOUND » si le contenu contient kVirusMarker,
- *   « ERROR » s'il contient kErrorMarker, « OK » sinon.
+ *   répond comme clamd : « FOUND » si le contenu contient kVirusMarker (menace),
+ *   kSuspiciousMarker (programme potentiellement indésirable) ou
+ *   kEncryptedMarker (archive chiffrée), « ERROR » s'il contient kErrorMarker,
+ *   « OK » sinon. Comme clamd, un fichier plus gros que maxFileSize (s'il
+ *   n'est pas nul) n'est pas lu : la réponse est « OK ».
  * - Toute autre commande : renvoie `reply` tel quel ; si `reply` est nul
  *   (QByteArray()), ne répond jamais (test du délai d'attente).
  *
@@ -35,8 +39,15 @@ class FakeClamd
 {
 public:
     static constexpr const char *kVirusMarker = "LINUX-DEFENDER-FAKE-VIRUS";
+    static constexpr const char *kSuspiciousMarker = "LINUX-DEFENDER-FAKE-PUA";
+    static constexpr const char *kEncryptedMarker = "LINUX-DEFENDER-FAKE-ENCRYPTED";
     static constexpr const char *kErrorMarker = "LINUX-DEFENDER-FAKE-ERROR";
     static constexpr const char *kVirusName = "Test.FakeVirus";
+    static constexpr const char *kSuspiciousName = "PUA.Unix.Tool.FakePua";
+    static constexpr const char *kEncryptedName = "Heuristics.Encrypted.Zip";
+
+    // Taille au-delà de laquelle un fichier n'est pas lu (MaxFileSize de clamd) ; 0 = pas de limite.
+    std::atomic<qint64> maxFileSize{0};
 
     FakeClamd(const QString &path, const QByteArray &reply)
         : m_path(QFile::encodeName(path))
@@ -140,15 +151,21 @@ private:
                     return;
             }
             QByteArray content;
+            struct stat info;
+            const bool tooBig = maxFileSize > 0 && ::fstat(fd, &info) == 0 && info.st_size > maxFileSize;
             char buffer[4096];
             ssize_t n;
-            while ((n = ::read(fd, buffer, sizeof(buffer))) > 0)
+            while (!tooBig && (n = ::read(fd, buffer, sizeof(buffer))) > 0)
                 content.append(buffer, int(n));
             const QByteArray name = "fd[" + QByteArray::number(fd) + "]: ";
             ::close(fd);
             ++m_filesScanned;
             if (content.contains(kVirusMarker))
                 reply = name + kVirusName + " FOUND";
+            else if (content.contains(kSuspiciousMarker))
+                reply = name + kSuspiciousName + " FOUND";
+            else if (content.contains(kEncryptedMarker))
+                reply = name + kEncryptedName + " FOUND";
             else if (content.contains(kErrorMarker))
                 reply = name + "Fake read error ERROR";
             else

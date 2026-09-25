@@ -1,0 +1,213 @@
+#!/bin/sh
+# Programme d'aide de Linux Defender : les corrections qui demandent les droits
+# root (page « Diagnostic », case de la protection en temps réel).
+# Fichier généré à partir de data/helper/linux-defender-helper.in.
+#
+# L'application le lance avec pkexec, sous l'action polkit
+# io.github.memton80.linux-defender.manage (mot de passe administrateur,
+# retenu quelques minutes : plusieurs corrections à la suite n'en demandent
+# qu'un). Liste fermée d'actions, sans chemin ni commande venant de
+# l'appelant : l'application dit quoi faire, ce programme décide comment.
+#
+#   onaccess-enable          active et démarre la protection en temps réel
+#   onaccess-disable         l'arrête et la désactive
+#   clamd-start              active et démarre le service clamd installé
+#   clamd-configure          commente « Example », active LocalSocket, démarre clamd
+#   clamd-alert-exceeds-max  AlertExceedsMax yes dans la configuration de clamd
+#   freshclam-enable         active et démarre la mise à jour des signatures
+#   selinux-allow-scan       autorise clamd à lire les fichiers (SELinux)
+#   inotify-raise            relève fs.inotify.max_user_watches
+#   socket-group-add GROUPE  ajoute l'utilisateur au groupe du socket de clamd
+#
+# Codes de sortie : 0 succès, 2 appel invalide, 3 action impossible sur ce
+# système, autre : échec d'une commande (systemctl...). Le message d'erreur,
+# sur la sortie d'erreur, est affiché par l'application.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+# Tests seulement (tests/tst_helper.sh) : les fichiers modifiés sont sous
+# cette racine et les commandes du système sont affichées au lieu d'être
+# lancées. pkexec ne transmet pas cette variable : lancé par l'application,
+# ce programme agit toujours sur le système.
+ROOT=${LINUX_DEFENDER_HELPER_ROOT:-}
+
+ONACCESS_SERVICE=@DEFENDER_ONACCESS_SERVICE@
+DISTRIBUTION_ONACCESS_SERVICE=clamav-clamonacc.service
+FRESHCLAM_SERVICE=clamav-freshclam.service
+# Mêmes listes que l'application (ClamdConfig, SystemDiagnostics), même ordre.
+CLAMD_CONFIG_FILES="/etc/clamd.d/scan.conf /etc/clamav/clamd.conf /etc/clamd.conf"
+CLAMD_SERVICES="clamd@scan.service clamav-daemon.service clamd.service"
+SOCKET_GROUPS="clamav virusgroup clamscan"
+SYSCTL_FILE=/etc/sysctl.d/90-linux-defender.conf
+INOTIFY_WATCHES=524288
+
+fail() {
+    echo "$*" >&2
+    exit 3
+}
+
+usage() {
+    echo "Usage : $0 <action> [argument] (voir l'en-tête du programme)" >&2
+    exit 2
+}
+
+run() {
+    if [ -n "$ROOT" ]; then
+        echo "$*"
+    else
+        "$@"
+    fi
+}
+
+# Le service existe-t-il (fichier d'unité chargé par systemd) ?
+service_exists() {
+    if [ -n "$ROOT" ]; then
+        [ -e "$ROOT/services/$1" ]
+    else
+        [ "$(systemctl show --property=LoadState --value "$1" 2>/dev/null)" = loaded ]
+    fi
+}
+
+clamd_service() {
+    for service in $CLAMD_SERVICES; do
+        if service_exists "$service"; then
+            echo "$service"
+            return
+        fi
+    done
+    fail "Aucun service clamd n'est installé (clamd@scan, clamav-daemon ou clamd)."
+}
+
+clamd_config() {
+    for file in $CLAMD_CONFIG_FILES; do
+        if [ -f "$ROOT$file" ]; then
+            echo "$ROOT$file"
+            return
+        fi
+    done
+    fail "Configuration de clamd introuvable ($CLAMD_CONFIG_FILES)."
+}
+
+# Copie de la configuration d'origine, faite une seule fois, avant la
+# première modification par Linux Defender.
+save_original() {
+    if [ ! -e "$1.linux-defender-orig" ]; then
+        cp -p "$1" "$1.linux-defender-orig"
+    fi
+}
+
+group_exists() {
+    if [ -n "$ROOT" ]; then
+        grep -q "^$1:" "$ROOT/etc/group"
+    else
+        getent group "$1" > /dev/null
+    fi
+}
+
+# Directive active (ni commentée, ni absente) ?
+has_directive() {
+    grep -Eq "^[[:space:]]*$2([[:space:]]|\$)" "$1"
+}
+
+# Donne la valeur $3 à la directive $2 : ligne active remplacée, sinon
+# première ligne commentée réactivée, sinon ligne ajoutée à la fin.
+set_directive() {
+    if has_directive "$1" "$2"; then
+        sed -i -E "s|^[[:space:]]*$2([[:space:]].*)?\$|$2 $3|" "$1"
+    elif grep -Eq "^#[[:space:]]*$2([[:space:]]|\$)" "$1"; then
+        sed -i -E "0,/^#[[:space:]]*$2([[:space:]].*)?\$/s||$2 $3|" "$1"
+    else
+        printf '%s %s\n' "$2" "$3" >> "$1"
+    fi
+}
+
+[ $# -ge 1 ] || usage
+action=$1
+shift
+
+case "$action" in
+onaccess-enable)
+    [ $# -eq 0 ] || usage
+    service_exists "$ONACCESS_SERVICE" || fail "Le service $ONACCESS_SERVICE n'est pas installé."
+    # Un seul clamonacc à la fois : celui de la distribution (Debian, Ubuntu)
+    # déplace les fichiers infectés, avec sa propre configuration.
+    if service_exists "$DISTRIBUTION_ONACCESS_SERVICE"; then
+        run systemctl disable --now "$DISTRIBUTION_ONACCESS_SERVICE"
+    fi
+    run systemctl enable --now "$ONACCESS_SERVICE"
+    ;;
+onaccess-disable)
+    [ $# -eq 0 ] || usage
+    run systemctl disable --now "$ONACCESS_SERVICE"
+    ;;
+clamd-start)
+    [ $# -eq 0 ] || usage
+    service=$(clamd_service)
+    run systemctl enable --now "$service"
+    ;;
+clamd-configure)
+    [ $# -eq 0 ] || usage
+    config=$(clamd_config)
+    service=$(clamd_service)
+    save_original "$config"
+    # Ligne « Example » : clamd refuse de démarrer tant qu'elle est active.
+    sed -i -E 's/^([[:space:]]*Example([[:space:]].*)?)$/#\1/' "$config"
+    # Sans LocalSocket, clamd n'ouvre pas de socket (Fedora, par défaut).
+    if ! has_directive "$config" LocalSocket; then
+        case "$config" in
+        */clamd.d/scan.conf) socket=/run/clamd.scan/clamd.sock ;;
+        *) socket=/run/clamav/clamd.ctl ;;
+        esac
+        set_directive "$config" LocalSocket "$socket"
+    fi
+    run systemctl enable "$service"
+    run systemctl restart "$service"
+    ;;
+clamd-alert-exceeds-max)
+    [ $# -eq 0 ] || usage
+    config=$(clamd_config)
+    service=$(clamd_service)
+    save_original "$config"
+    set_directive "$config" AlertExceedsMax yes
+    # Relecture de la configuration : clamd redémarre (et recharge ses
+    # signatures) seulement s'il tournait.
+    run systemctl try-restart "$service"
+    ;;
+freshclam-enable)
+    [ $# -eq 0 ] || usage
+    service_exists "$FRESHCLAM_SERVICE" \
+        || fail "Le service $FRESHCLAM_SERVICE n'est pas installé (paquet clamav-update sous Fedora, clamav-freshclam sous Debian et Ubuntu)."
+    run systemctl enable --now "$FRESHCLAM_SERVICE"
+    ;;
+selinux-allow-scan)
+    [ $# -eq 0 ] || usage
+    [ -n "$ROOT" ] || command -v setsebool > /dev/null || fail "setsebool est introuvable : SELinux n'est pas installé."
+    run setsebool -P antivirus_can_scan_system 1
+    ;;
+inotify-raise)
+    [ $# -eq 0 ] || usage
+    mkdir -p "$ROOT$(dirname "$SYSCTL_FILE")"
+    printf '# Linux Defender : protection en temps réel (clamonacc), un suivi par dossier.\nfs.inotify.max_user_watches = %s\n' \
+        "$INOTIFY_WATCHES" > "$ROOT$SYSCTL_FILE"
+    run sysctl -q -w "fs.inotify.max_user_watches=$INOTIFY_WATCHES"
+    run systemctl try-restart "$ONACCESS_SERVICE"
+    ;;
+socket-group-add)
+    [ $# -eq 1 ] || usage
+    group=$1
+    case " $SOCKET_GROUPS " in
+    *" $group "*) ;;
+    *) fail "Groupe non autorisé : $group (attendu : $SOCKET_GROUPS)." ;;
+    esac
+    group_exists "$group" || fail "Le groupe $group n'existe pas sur ce système."
+    # Utilisateur qui a lancé pkexec, jamais un nom fourni par l'appelant.
+    [ -n "${PKEXEC_UID:-}" ] || fail "Utilisateur inconnu : ce programme doit être lancé avec pkexec."
+    user=$(getent passwd "$PKEXEC_UID" | cut -d: -f1)
+    [ -n "$user" ] || fail "Utilisateur $PKEXEC_UID introuvable."
+    run usermod -aG "$group" "$user"
+    ;;
+*)
+    usage
+    ;;
+esac

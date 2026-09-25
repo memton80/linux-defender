@@ -3,8 +3,12 @@
 add_library(defender_core STATIC
     core/ClamdClient.h
     core/ClamdClient.cpp
+    core/ClamdConfig.h
+    core/ClamdConfig.cpp
     core/ClamdWatcher.h
     core/ClamdWatcher.cpp
+    core/Quarantine.h
+    core/Quarantine.cpp
     core/ScanHistory.h
     core/ScanHistory.cpp
     core/ScanJob.h
@@ -30,13 +34,19 @@ add_library(defender_system STATIC
     system/OnAccessController.cpp
     system/OnAccessLog.h
     system/OnAccessLog.cpp
+    system/PrivilegedHelper.h
+    system/PrivilegedHelper.cpp
+    system/ScanSchedule.h
+    system/ScanSchedule.cpp
     system/SingleInstance.h
     system/SingleInstance.cpp
+    system/SystemDiagnostics.h
+    system/SystemDiagnostics.cpp
     system/UsbMonitor.h
     system/UsbMonitor.cpp
 )
 target_include_directories(defender_system PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(defender_system PUBLIC Qt6::Core Qt6::Network Qt6::DBus)
+target_link_libraries(defender_system PUBLIC defender_core Qt6::Core Qt6::Network Qt6::DBus)
 
 # Protection en temps réel : nom du service systemd et chemins de ses fichiers.
 # Définis ici UNE seule fois : ils servent à générer les fichiers installés
@@ -55,6 +65,8 @@ qt_add_executable(linux-defender
     main.cpp
     ui/DashboardPage.h
     ui/DashboardPage.cpp
+    ui/DiagnosticsPanel.h
+    ui/DiagnosticsPanel.cpp
     ui/FileActions.h
     ui/FileActions.cpp
     ui/HistoryModel.h
@@ -67,6 +79,8 @@ qt_add_executable(linux-defender
     ui/OnAccessModel.cpp
     ui/OnAccessPanel.h
     ui/OnAccessPanel.cpp
+    ui/QuarantinePanel.h
+    ui/QuarantinePanel.cpp
     ui/ScanPanel.h
     ui/ScanPanel.cpp
     ui/ScanResultsModel.h
@@ -90,7 +104,9 @@ qt_add_resources(linux-defender "icons"
     BASE ${DATA_DIR}/icons
     FILES
         ${DATA_DIR}/icons/linux-defender.svg
+        ${DATA_DIR}/icons/result-suspicious.svg
         ${DATA_DIR}/icons/result-threat.svg
+        ${DATA_DIR}/icons/result-unscanned.svg
         ${DATA_DIR}/icons/result-warning.svg
         ${DATA_DIR}/icons/status-error.svg
         ${DATA_DIR}/icons/status-ok.svg
@@ -98,14 +114,19 @@ qt_add_resources(linux-defender "icons"
         ${DATA_DIR}/icons/status-unknown.svg
 )
 
-# Installation, en deux composants :
-# - application : binaire, fichier .desktop, icône, page de manuel ;
+# Installation, en trois composants :
+# - application : binaire, fichiers .desktop (menu des applications, menu de
+#   Dolphin), icône, page de manuel ;
 # - onaccess : service systemd de la protection en temps réel, configuration
-#   de clamonacc et rotation de son journal (fichiers système : paquets .deb
-#   et .rpm seulement, pas l'archive .tar.gz).
+#   de clamonacc et rotation de son journal ;
+# - admin : programme d'aide lancé par pkexec, et son action polkit.
+# onaccess et admin sont des fichiers système : paquets .deb et .rpm
+# seulement, pas l'archive .tar.gz.
 install(TARGETS linux-defender RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT application)
 install(FILES ${DATA_DIR}/linux-defender.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications COMPONENT application)
 install(FILES ${DATA_DIR}/icons/linux-defender.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps COMPONENT application)
+# Menu contextuel de Dolphin : « Analyser avec Linux Defender ».
+install(FILES ${DATA_DIR}/linux-defender-scan.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/kio/servicemenus COMPONENT application)
 # Page de manuel : la version y est inscrite (en-tête de « man linux-defender »).
 configure_file(${DATA_DIR}/linux-defender.1.in ${CMAKE_CURRENT_BINARY_DIR}/linux-defender.1 @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/linux-defender.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1 COMPONENT application)
@@ -129,3 +150,21 @@ install(FILES ${ONACCESS_DIR}/${DEFENDER_ONACCESS_SERVICE} DESTINATION ${DEFENDE
 install(FILES ${ONACCESS_DIR}/clamonacc.conf DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/linux-defender COMPONENT onaccess)
 install(FILES ${ONACCESS_DIR}/linux-defender.logrotate DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/logrotate.d
         RENAME linux-defender COMPONENT onaccess)
+
+# Programme d'aide : les corrections qui demandent les droits root (page
+# « Diagnostic », case de la protection en temps réel), lancées avec pkexec
+# sous une action polkit dédiée. Son chemin est défini ici une seule fois : il
+# est inscrit dans l'action polkit (pkexec l'exige) et transmis au code
+# (PrivilegedHelper). Composant « admin » : paquets .deb et .rpm seulement.
+set(DEFENDER_HELPER_PATH "${CMAKE_INSTALL_FULL_LIBEXECDIR}/linux-defender-helper")
+target_compile_definitions(defender_system PUBLIC DEFENDER_HELPER_PATH="${DEFENDER_HELPER_PATH}")
+set(HELPER_DIR ${CMAKE_CURRENT_BINARY_DIR}/helper)
+configure_file(${DATA_DIR}/helper/linux-defender-helper.in ${HELPER_DIR}/linux-defender-helper @ONLY)
+configure_file(${DATA_DIR}/helper/io.github.memton80.linux-defender.policy.in
+               ${HELPER_DIR}/io.github.memton80.linux-defender.policy @ONLY)
+# Programme d'aide généré et nom du service, pour le test tests/tst_helper.sh.
+set(DEFENDER_HELPER_GENERATED ${HELPER_DIR}/linux-defender-helper PARENT_SCOPE)
+set(DEFENDER_ONACCESS_SERVICE ${DEFENDER_ONACCESS_SERVICE} PARENT_SCOPE)
+install(PROGRAMS ${HELPER_DIR}/linux-defender-helper DESTINATION ${CMAKE_INSTALL_LIBEXECDIR} COMPONENT admin)
+install(FILES ${HELPER_DIR}/io.github.memton80.linux-defender.policy
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/polkit-1/actions COMPONENT admin)
