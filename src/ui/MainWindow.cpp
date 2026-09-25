@@ -244,6 +244,13 @@ void MainWindow::startQuickScan()
     m_scanPanel->startQuickScan();
 }
 
+void MainWindow::scanPaths(const QStringList &paths)
+{
+    showAndActivate();
+    showPage(ScanPage);
+    m_scans->scan(paths, ScanManager::Origin::Manual);
+}
+
 void MainWindow::showOnAccess()
 {
     showPage(OnAccessPage);

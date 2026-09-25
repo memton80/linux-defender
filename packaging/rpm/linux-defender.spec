@@ -135,6 +135,10 @@ fi
 %{_bindir}/%{name}
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
+# Menu contextuel de Dolphin ; dossiers possédés aussi : KDE n'est pas requis.
+%dir %{_datadir}/kio
+%dir %{_datadir}/kio/servicemenus
+%{_datadir}/kio/servicemenus/%{name}-scan.desktop
 %{_mandir}/man1/%{name}.1*
 %{_unitdir}/linux-defender-onaccess.service
 %{_presetdir}/80-linux-defender.preset

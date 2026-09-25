@@ -7,6 +7,7 @@
 #   bin/linux-defender
 #   share/applications/linux-defender.desktop
 #   share/icons/hicolor/scalable/apps/linux-defender.svg
+#   share/kio/servicemenus/linux-defender-scan.desktop (menu de Dolphin)
 #   README.md
 # Les autres icônes (état, menaces...) sont intégrées au binaire. Le service
 # systemd de la protection en temps réel n'en fait pas partie : il est fourni
@@ -20,6 +21,9 @@ staging="dist/$name"
 
 rm -rf "$staging"
 cmake --install "$build" --prefix "$PWD/$staging" --strip --component application
+# Dolphin n'accepte un menu contextuel installé dans le dossier personnel
+# (~/.local/share/kio/servicemenus) que s'il est exécutable.
+chmod +x "$staging/share/kio/servicemenus/linux-defender-scan.desktop"
 cp README.md "$staging/"
 tar -C dist -czf "dist/$name.tar.gz" "$name"
 rm -rf "$staging"

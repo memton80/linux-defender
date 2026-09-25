@@ -9,3 +9,10 @@ Icon=linux-defender
 Terminal=false
 Categories=Qt;System;Security;
 Keywords=antivirus;clamav;virus;malware;scan;
+Actions=QuickScan;
+
+[Desktop Action QuickScan]
+Name=Quick scan
+Name[fr]=Analyse rapide
+Icon=system-search
+Exec=linux-defender --quick-scan

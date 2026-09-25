@@ -28,6 +28,10 @@ dans le fichier `VERSION` ; avant la 1.0.2, les paquets construits hors tag port
   `clamav-freshclam`, SELinux (`antivirus_can_scan_system`), `AlertExceedsMax`, protection en temps
   réel et limite inotify. Chaque problème a son explication, la commande exacte à copier et, si
   possible, une **correction en un clic**. Le bandeau de l'accueil y mène (« Résoudre »).
+- **Menu contextuel de Dolphin « Analyser avec Linux Defender »** sur les fichiers et dossiers
+  locaux, et action **« Analyse rapide »** dans le menu des applications. Options
+  `--scan <chemins…>` et `--quick-scan` : l'analyse est transmise à l'instance déjà lancée, avec
+  le jeton d'activation Wayland pour que sa fenêtre prenne le focus.
 - **Case « Activer la protection en temps réel »** dans la page du même nom.
 - Programme d'aide `/usr/libexec/linux-defender-helper` (paquets `.deb` et `.rpm`), lancé par
   `pkexec` sous l'action polkit `io.github.memton80.linux-defender.manage` : mot de passe

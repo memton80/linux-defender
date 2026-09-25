@@ -41,6 +41,8 @@ public:
     void chooseFolderToScan();
     // Affiche la fenêtre et lance une analyse rapide.
     void startQuickScan();
+    // Affiche la fenêtre et analyse ces fichiers et dossiers (menu de Dolphin, --scan).
+    void scanPaths(const QStringList &paths);
     // Affiche la fenêtre sur la page « Protection en temps réel ».
     void showOnAccess();
     // Affiche la fenêtre sur la page « Diagnostic ».

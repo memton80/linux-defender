@@ -109,7 +109,8 @@ qt_add_resources(linux-defender "icons"
 )
 
 # Installation, en trois composants :
-# - application : binaire, fichier .desktop, icône, page de manuel ;
+# - application : binaire, fichiers .desktop (menu des applications, menu de
+#   Dolphin), icône, page de manuel ;
 # - onaccess : service systemd de la protection en temps réel, configuration
 #   de clamonacc et rotation de son journal ;
 # - admin : programme d'aide lancé par pkexec, et son action polkit.
@@ -118,6 +119,8 @@ qt_add_resources(linux-defender "icons"
 install(TARGETS linux-defender RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT application)
 install(FILES ${DATA_DIR}/linux-defender.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications COMPONENT application)
 install(FILES ${DATA_DIR}/icons/linux-defender.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps COMPONENT application)
+# Menu contextuel de Dolphin : « Analyser avec Linux Defender ».
+install(FILES ${DATA_DIR}/linux-defender-scan.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/kio/servicemenus COMPONENT application)
 # Page de manuel : la version y est inscrite (en-tête de « man linux-defender »).
 configure_file(${DATA_DIR}/linux-defender.1.in ${CMAKE_CURRENT_BINARY_DIR}/linux-defender.1 @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/linux-defender.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1 COMPONENT application)

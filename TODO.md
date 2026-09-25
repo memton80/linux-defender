@@ -41,10 +41,10 @@ analysé, ni comme « menace » ce qui n'est qu'un soupçon.
 
 ## 3. Intégration au gestionnaire de fichiers
 
-- [ ] Option `--scan <chemins…>` : analyse dans l'instance déjà lancée, ou au lancement
-- [ ] Menu contextuel de Dolphin « Analyser avec Linux Defender » (fichiers et dossiers)
-- [ ] Action « Analyse rapide » dans le menu des applications (`--quick-scan`)
-- [ ] Tests (transmission des chemins à l'instance lancée)
+- [x] Option `--scan <chemins…>` : analyse dans l'instance déjà lancée, ou au lancement
+- [x] Menu contextuel de Dolphin « Analyser avec Linux Defender » (fichiers et dossiers)
+- [x] Action « Analyse rapide » dans le menu des applications (`--quick-scan`)
+- [x] Tests (transmission des chemins à l'instance lancée)
 
 ## 4. Analyse rapide renforcée et analyses planifiées
 

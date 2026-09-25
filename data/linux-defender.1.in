@@ -8,6 +8,10 @@ linux-defender \- interface graphique légère pour l'antivirus ClamAV
 .RB [ \-\-background ]
 .RB [ \-s | \-\-socket
 .IR chemin ]
+.RB [ \-\-quick\-scan ]
+.br
+.B linux-defender \-\-scan
+.IR chemin ...
 .SH DESCRIPTION
 .B linux-defender
 est une interface Qt pour le démon
@@ -27,7 +31,9 @@ clamd (commande FILDES) : clamd peut ainsi analyser le dossier personnel et les
 supports amovibles sans avoir le droit de les lire lui-même.
 .PP
 Une seule instance tourne à la fois : relancer la commande réaffiche la fenêtre
-de l'instance existante.
+de l'instance existante, ou lui transmet l'analyse demandée
+.RB ( \-\-scan ,
+.BR \-\-quick\-scan ).
 .SH OPTIONS
 .TP
 .B \-\-background
@@ -37,6 +43,15 @@ l'option utilisée par le démarrage automatique de session.
 .BR \-s ", " \-\-socket " \fIchemin\fR"
 Chemin du socket Unix de clamd. Par défaut : celui des paramètres, sinon la
 directive LocalSocket de la configuration de clamd, sinon un emplacement usuel.
+.TP
+.BI \-\-scan " chemin" ...
+Analyse les fichiers et dossiers donnés (chemins relatifs au dossier courant).
+C'est la commande du menu contextuel de Dolphin « Analyser avec Linux
+Defender ». Si l'application tourne déjà, l'analyse est lancée dans sa fenêtre
+et la commande se termine aussitôt.
+.TP
+.B \-\-quick\-scan
+Lance une analyse rapide, dans l'instance déjà lancée s'il y en a une.
 .TP
 .BR \-h ", " \-\-help
 Affiche l'aide.

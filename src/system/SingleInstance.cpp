@@ -2,16 +2,71 @@
 
 #include <QDebug>
 #include <QDir>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLocalSocket>
 #include <QStandardPaths>
 #include <QThread>
 
 namespace
 {
+const QString kActionKey = QStringLiteral("action");
+const QString kPathsKey = QStringLiteral("paths");
+const QString kTokenKey = QStringLiteral("activationToken");
+
+QString actionName(InstanceRequest::Action action)
+{
+    switch (action) {
+    case InstanceRequest::Action::Scan:
+        return QStringLiteral("scan");
+    case InstanceRequest::Action::QuickScan:
+        return QStringLiteral("quick-scan");
+    case InstanceRequest::Action::Show:
+        break;
+    }
+    return QStringLiteral("show");
+}
+
 QString baseDirectory(const QString &directory)
 {
     return directory.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation) : directory;
 }
+}
+
+QByteArray InstanceRequest::encode() const
+{
+    // Sans rien d'autre à transmettre : « show », que comprennent aussi les versions 1.0.x.
+    if (action == Action::Show && activationToken.isEmpty())
+        return QByteArrayLiteral("show");
+    QJsonObject object{{kActionKey, actionName(action)}};
+    if (!paths.isEmpty())
+        object.insert(kPathsKey, QJsonArray::fromStringList(paths));
+    if (!activationToken.isEmpty())
+        object.insert(kTokenKey, activationToken);
+    // Compact : une seule ligne, les sauts de ligne des chemins sont échappés.
+    return QJsonDocument(object).toJson(QJsonDocument::Compact);
+}
+
+std::optional<InstanceRequest> InstanceRequest::decode(const QByteArray &message)
+{
+    if (message == "show")
+        return InstanceRequest{};
+    const QJsonObject object = QJsonDocument::fromJson(message).object();
+    InstanceRequest request;
+    const QString action = object.value(kActionKey).toString();
+    if (action == QLatin1String("scan"))
+        request.action = Action::Scan;
+    else if (action == QLatin1String("quick-scan"))
+        request.action = Action::QuickScan;
+    else if (action != QLatin1String("show"))
+        return std::nullopt;
+    for (const QJsonValue &path : object.value(kPathsKey).toArray())
+        request.paths << path.toString();
+    request.activationToken = object.value(kTokenKey).toString();
+    if (request.action == Action::Scan && request.paths.isEmpty())
+        return std::nullopt;
+    return request;
 }
 
 SingleInstance::SingleInstance(const QString &name, const QString &directory, QObject *parent)

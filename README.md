@@ -133,7 +133,13 @@ sudo setsebool -P antivirus_can_scan_system 1
 linux-defender                           # ouvre la fenêtre, socket détecté automatiquement
 linux-defender --background              # démarre directement dans la zone de notification
 linux-defender --socket /chemin/clamd.sock
+linux-defender --scan fichier.zip ~/Téléchargements   # analyse ces fichiers et dossiers
+linux-defender --quick-scan               # lance une analyse rapide
 ```
+
+`--scan` et `--quick-scan` passent par l'instance déjà lancée s'il y en a une (sinon, elle
+démarre) : la fenêtre s'ouvre sur la page « Analyse ». Une analyse déjà en cours n'est pas
+interrompue, la nouvelle attend son tour. Les chemins relatifs le sont au dossier de lancement.
 
 Depuis une compilation des sources, le binaire est `build/bin/linux-defender`. Aide complète :
 `man linux-defender`.
@@ -169,6 +175,26 @@ Fermer la fenêtre ne quitte pas l'application : elle reste active dans la zone 
   « Quitter ».
 
 L'application ne se lance qu'une fois : la relancer réaffiche simplement la fenêtre existante.
+Sous Wayland, le jeton d'activation du lanceur (`XDG_ACTIVATION_TOKEN`) est transmis à
+l'instance déjà lancée, pour que sa fenêtre puisse prendre le focus.
+
+### Depuis le gestionnaire de fichiers
+
+- **Dolphin (KDE)** : clic droit sur des fichiers ou des dossiers, « Analyser avec Linux
+  Defender ». Le menu est installé par les paquets et l'archive
+  (`share/kio/servicemenus/linux-defender-scan.desktop`) ; il s'applique aux fichiers locaux.
+  Avec l'archive `.tar.gz` copiée dans `~/.local`, Dolphin exige que ce fichier soit exécutable
+  (il l'est dans l'archive).
+- **Menu des applications** : clic droit sur « Linux Defender », « Analyse rapide ».
+- **Fichiers (GNOME)** : pas de menu contextuel installé, mais un script le remplace. Créez
+  `~/.local/share/nautilus/scripts/Analyser avec Linux Defender`, rendez-le exécutable
+  (`chmod +x`), avec ce contenu ; il apparaît dans le menu « Scripts » du clic droit :
+
+  ```sh
+  #!/bin/sh
+  exec linux-defender --scan "$@"
+  ```
+
 
 ### Analyses
 
