@@ -3,6 +3,7 @@
 #include "StatusDisplay.h"
 #include "Widgets.h"
 #include "core/ClamdClient.h"
+#include "core/ClamdConfig.h"
 #include "core/ScanHistory.h"
 #include "core/Settings.h"
 #include "system/Autostart.h"
@@ -16,6 +17,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QLocale>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScrollArea>
@@ -190,8 +192,16 @@ QWidget *SettingsDialog::createScanPage()
     auto *options = new QVBoxLayout;
     options->addWidget(m_scanHidden);
     options->addLayout(sizeRow);
-    options->addWidget(note(tr("Les fichiers ignorés sont comptés dans le bilan. clamd applique aussi sa propre "
-                               "limite (MaxFileSize dans sa configuration).")));
+    // Limite de clamd lui-même : au-delà, il répond « OK » sans lire le fichier.
+    const ClamdConfig clamdConfig = ClamdConfig::forSocket(Settings::effectiveSocketPath());
+    const QString clamdLimit = clamdConfig.maxFileSize > 0
+        ? tr("%1 Mo").arg(QLocale().toString(double(clamdConfig.unscannedAbove()) / (1024 * 1024), 'g', 4))
+        : tr("aucune (2 Go au plus)");
+    options->addWidget(note(tr("Les fichiers ignorés sont comptés dans le bilan. clamd a aussi sa propre limite "
+                               "(MaxFileSize, actuellement : %1, lue dans %2) : au-delà, il ne lit pas le fichier, "
+                               "qui est alors signalé « non analysé ».")
+                                .arg(clamdLimit, clamdConfig.path.isEmpty() ? tr("les valeurs par défaut de clamd")
+                                                                            : clamdConfig.path)));
 
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);

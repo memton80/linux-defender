@@ -7,8 +7,6 @@
 #include <QIcon>
 #include <QSortFilterProxyModel>
 
-#include <optional>
-
 /**
  * Résultats du scan en cours ou du dernier scan, pour la liste de la fenêtre.
  *
@@ -24,7 +22,7 @@ public:
     enum Column { StatusColumn, PathColumn, DetailColumn, ColumnCount };
     enum Role {
         StatusRole = Qt::UserRole, // ScanResult::Status, en entier (filtre)
-        SortRole,                  // clé de tri : menaces, puis erreurs, puis fichiers sains
+        SortRole,                  // clé de tri : menaces, avertissements, erreurs, puis fichiers sains
     };
     static constexpr int kMaxCleanRows = 10000;
 
@@ -42,17 +40,15 @@ public:
 
 private:
     QList<ScanResult> m_results;
-    // Créés une seule fois : les recréer à chaque affichage de ligne referait le rendu des SVG.
-    QIcon m_cleanIcon;
-    QIcon m_infectedIcon;
-    QIcon m_errorIcon;
+    // Créées une seule fois : les recréer à chaque affichage de ligne referait le rendu des SVG.
+    QIcon m_icons[ScanResult::kStatusCount]; // par statut
     QFont m_infectedFont;
     int m_cleanRows = 0;
     qint64 m_unlistedClean = 0;
 };
 
 /**
- * Tri et filtre de la liste des résultats : un seul statut ou tous, et texte
+ * Tri et filtre de la liste des résultats : certains statuts ou tous, et texte
  * recherché dans le chemin ou le nom de la menace (sans tenir compte de la casse).
  */
 class ScanResultsFilter : public QSortFilterProxyModel
@@ -62,14 +58,14 @@ class ScanResultsFilter : public QSortFilterProxyModel
 public:
     explicit ScanResultsFilter(QObject *parent = nullptr);
 
-    // std::nullopt : tous les statuts.
-    void setStatus(std::optional<ScanResult::Status> status);
+    // Liste vide : tous les statuts.
+    void setStatuses(const QList<ScanResult::Status> &statuses);
     void setText(const QString &text);
 
 protected:
     bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override;
 
 private:
-    std::optional<ScanResult::Status> m_status;
+    QList<ScanResult::Status> m_statuses;
     QString m_text;
 };

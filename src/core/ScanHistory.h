@@ -20,11 +20,14 @@ struct ScanRecord
     QStringList paths;
     qint64 scanned = 0;
     qint64 infected = 0;
+    qint64 suspicious = 0;
+    qint64 unscanned = 0;
     qint64 errors = 0;
     qint64 skipped = 0;
     bool cancelled = false;
     QString fatalError;
-    QList<ScanResult> threats; // au plus ScanSummary::kMaxThreats
+    QList<ScanResult> threats;  // au plus ScanSummary::kMaxThreats
+    QList<ScanResult> warnings; // suspects et non analysés, au plus ScanSummary::kMaxThreats
 
     static ScanRecord fromSummary(const ScanSummary &summary, ScanManager::Origin origin);
     // Même bilan que le scan d'origine (pour les textes partagés avec les scans).

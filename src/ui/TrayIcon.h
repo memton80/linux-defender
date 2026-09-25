@@ -77,6 +77,7 @@ private:
     DesktopNotifier m_notifier;
     QHash<QString, QIcon> m_fallbackIcons; // par clé de notification
     QList<ThreatText::Threat> m_scanThreats;     // premières menaces du scan en cours
+    QList<ThreatText::Threat> m_scanSuspicious;  // premiers fichiers suspects du scan en cours
     QList<ThreatText::Threat> m_realtimeThreats; // détections de l'alerte affichée, pas encore consultées
     ClamdWatcher::State m_lastClamdState;
     QString m_outdatedSignaturesNotified; // version des signatures déjà signalée comme obsolète

@@ -51,7 +51,8 @@ private:
     // Bilan d'un scan terminé (le dernier, ou celui de l'historique au lancement).
     void showSummary(const ScanSummary &summary, ScanManager::Origin origin);
     void showIdle();
-    void setStats(const QString &scanned, const QString &threats, const QString &errors, const QString &duration);
+    void setStats(const QString &scanned, const QString &threats, const QString &warnings, const QString &errors,
+                  const QString &duration);
     void updateElapsed();
     void updateFilterButtons();
     // Texte affiché à la place de la liste vide : selon le filtre et l'activité.
@@ -80,11 +81,12 @@ private:
 
     QLabel *m_scannedValue;
     QLabel *m_threatsValue;
+    QLabel *m_warningsValue;
     QLabel *m_errorsValue;
     QLabel *m_durationValue;
 
     QButtonGroup *m_filterGroup;
-    QList<QToolButton *> m_filterButtons; // tous, menaces, erreurs, sains
+    QList<QToolButton *> m_filterButtons; // tous, menaces, avertissements, erreurs, sains
     QLineEdit *m_search;
     QPushButton *m_exportButton;
     QTreeView *m_view;
@@ -97,7 +99,7 @@ private:
     ScanManager::Origin m_origin = ScanManager::Origin::Manual;
     QString m_target;
     qint64 m_done = 0;
-    qint64 m_counts[3] = {}; // résultats reçus, par statut (ScanResult::Status)
+    qint64 m_counts[ScanResult::kStatusCount] = {}; // résultats reçus, par statut (ScanResult::Status)
     QElapsedTimer m_elapsed;
     QTimer m_clock; // durée affichée pendant le scan
 };

@@ -14,7 +14,17 @@ class HistoryModel : public QAbstractTableModel
     Q_OBJECT
 
 public:
-    enum Column { DateColumn, TypeColumn, TargetColumn, ScannedColumn, ThreatsColumn, ErrorsColumn, DurationColumn, ColumnCount };
+    enum Column {
+        DateColumn,
+        TypeColumn,
+        TargetColumn,
+        ScannedColumn,
+        ThreatsColumn,
+        WarningsColumn,
+        ErrorsColumn,
+        DurationColumn,
+        ColumnCount
+    };
 
     explicit HistoryModel(ScanHistory *history, QObject *parent = nullptr);
 

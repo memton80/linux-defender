@@ -1,5 +1,6 @@
 #include "FakeClamd.h"
 #include "core/ClamdClient.h"
+#include "core/ClamdConfig.h"
 #include "core/ScanJob.h"
 #include "core/ScanManager.h"
 
@@ -93,6 +94,8 @@ private slots:
     void appliesExclusions();
     void canSkipHiddenFiles();
     void skipsLargeFiles();
+    void classifiesDetections();
+    void reportsFilesAboveClamdLimit();
     void managerQueuesScans();
     void managerAppliesOptions();
     void parseReply_data();
@@ -327,6 +330,73 @@ void TestScanJob::skipsLargeFiles()
     QCOMPARE(explicitRun.summary.infected, qint64(1));
 }
 
+void TestScanJob::classifiesDetections()
+{
+    FakeClamd clamd(socketPath(), QByteArrayLiteral("PONG\0"));
+    const QString virus = m_root + QStringLiteral("/virus.exe");
+    const QString pua = m_root + QStringLiteral("/outil.bin");
+    const QString encrypted = m_root + QStringLiteral("/archive.zip");
+    writeFile(virus, FakeClamd::kVirusMarker);
+    writeFile(pua, FakeClamd::kSuspiciousMarker);
+    writeFile(encrypted, FakeClamd::kEncryptedMarker);
+    writeFile(m_root + QStringLiteral("/sain.txt"), "x");
+
+    ScanJob job(socketPath(), {m_root});
+    const Run run = runJob(job);
+
+    QCOMPARE(run.summary.scanned, qint64(4));
+    QCOMPARE(run.summary.infected, qint64(1));
+    QCOMPARE(run.summary.suspicious, qint64(1));
+    QCOMPARE(run.summary.unscanned, qint64(1));
+    QCOMPARE(int(find(run, virus).status), int(ScanResult::Status::Infected));
+    QCOMPARE(int(find(run, pua).status), int(ScanResult::Status::Suspicious));
+    QCOMPARE(find(run, pua).detail, QString::fromLatin1(FakeClamd::kSuspiciousName));
+    QCOMPARE(int(find(run, encrypted).status), int(ScanResult::Status::Unscanned));
+    QCOMPARE(find(run, encrypted).detail, QString::fromLatin1(FakeClamd::kEncryptedName));
+
+    // Menaces et avertissements sont cités séparément dans le bilan.
+    QCOMPARE(run.summary.threats.size(), 1);
+    QCOMPARE(run.summary.threats.first().path, virus);
+    QCOMPARE(run.summary.warnings.size(), 2);
+    for (const ScanResult &warning : run.summary.warnings)
+        QVERIFY(warning.path == pua || warning.path == encrypted);
+}
+
+void TestScanJob::reportsFilesAboveClamdLimit()
+{
+    // Comme le vrai clamd (vérifié avec ClamAV 1.5.4) : au-delà de sa limite
+    // MaxFileSize, il répond « OK » sans lire le fichier, virus compris.
+    FakeClamd clamd(socketPath(), QByteArrayLiteral("PONG\0"));
+    clamd.maxFileSize = 100;
+    const QString big = m_root + QStringLiteral("/gros.iso");
+    const QString atLimit = m_root + QStringLiteral("/limite.bin");
+    writeFile(big, FakeClamd::kVirusMarker + QByteArray(200, 'x'));
+    writeFile(atLimit, FakeClamd::kVirusMarker + QByteArray(100 - int(qstrlen(FakeClamd::kVirusMarker)), 'x'));
+    writeFile(m_root + QStringLiteral("/petit.txt"), "x");
+
+    // Limite inconnue : l'application ne peut que croire clamd.
+    ScanJob blindJob(socketPath(), {big});
+    QCOMPARE(int(runJob(blindJob).results.value(0).status), int(ScanResult::Status::Clean));
+
+    ScanOptions options;
+    options.clamdUnscannedAbove = 100;
+    ScanJob job(socketPath(), {m_root}, options);
+    const Run run = runJob(job);
+
+    QCOMPARE(run.summary.scanned, qint64(3));
+    QCOMPARE(run.summary.unscanned, qint64(1));
+    const ScanResult bigResult = find(run, big);
+    QCOMPARE(int(bigResult.status), int(ScanResult::Status::Unscanned));
+    QCOMPARE(bigResult.detail, ScanJob::unscannedSizeText(100));
+    // Taille égale à la limite : clamd l'analyse (limite incluse).
+    QCOMPARE(int(find(run, atLimit).status), int(ScanResult::Status::Infected));
+    QCOMPARE(int(find(run, m_root + QStringLiteral("/petit.txt")).status), int(ScanResult::Status::Clean));
+    QCOMPARE(run.summary.warnings.size(), 1);
+
+    // Limite technique du moteur (2 Go) : texte propre, sans MaxFileSize.
+    QVERIFY(!ScanJob::unscannedSizeText(ClamdConfig::kEngineMaxFileSize).contains(QLatin1String("MaxFileSize")));
+}
+
 void TestScanJob::managerQueuesScans()
 {
     FakeClamd clamd(socketPath(), QByteArrayLiteral("PONG\0"));
@@ -388,6 +458,8 @@ void TestScanJob::parseReply_data()
     const int clean = int(ScanResult::Status::Clean);
     const int infected = int(ScanResult::Status::Infected);
     const int error = int(ScanResult::Status::Error);
+    const int suspicious = int(ScanResult::Status::Suspicious);
+    const int unscanned = int(ScanResult::Status::Unscanned);
 
     // Formats relevés sur un vrai clamd 1.5.
     QTest::newRow("sain") << QByteArray("fd[10]: OK") << true << clean << QString();
@@ -399,6 +471,19 @@ void TestScanJob::parseReply_data()
                             << QStringLiteral("Erreur de clamd : Can't allocate memory");
     QTest::newRow("erreur sans préfixe") << QByteArray("No file descriptor received. ERROR") << true << error
                                          << QStringLiteral("Erreur de clamd : No file descriptor received.");
+    // Détections classées d'après le nom de la signature (réponses d'un vrai
+    // clamd 1.5.4, avec AlertEncrypted et AlertExceedsMax).
+    QTest::newRow("programme indésirable") << QByteArray("fd[10]: PUA.Win.Adware.Agent-123-0 FOUND") << true
+                                           << suspicious << QStringLiteral("PUA.Win.Adware.Agent-123-0");
+    QTest::newRow("hameçonnage heuristique") << QByteArray("fd[10]: Heuristics.Phishing.Email.SpoofedDomain FOUND")
+                                             << true << suspicious
+                                             << QStringLiteral("Heuristics.Phishing.Email.SpoofedDomain");
+    QTest::newRow("archive chiffrée") << QByteArray("fd[10]: Heuristics.Encrypted.Zip FOUND") << true << unscanned
+                                      << QStringLiteral("Heuristics.Encrypted.Zip");
+    QTest::newRow("limite dépassée") << QByteArray("fd[10]: Heuristics.Limits.Exceeded.MaxScanSize FOUND") << true
+                                     << unscanned << QStringLiteral("Heuristics.Limits.Exceeded.MaxScanSize");
+    QTest::newRow("PUA non officielle") << QByteArray("fd[10]: PUA.Unix.Tool.Local.UNOFFICIAL FOUND") << true
+                                        << suspicious << QStringLiteral("PUA.Unix.Tool.Local.UNOFFICIAL");
     QTest::newRow("commande inconnue") << QByteArray("UNKNOWN COMMAND") << false << 0 << QString();
     QTest::newRow("vide") << QByteArray() << false << 0 << QString();
 }

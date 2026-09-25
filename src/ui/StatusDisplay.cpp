@@ -141,6 +141,10 @@ QIcon resultIcon(ScanResult::Status status)
         return svgIcon(QStringLiteral(":/icons/status-ok.svg"));
     case ScanResult::Status::Infected:
         return threatIcon();
+    case ScanResult::Status::Suspicious:
+        return svgIcon(QStringLiteral(":/icons/result-suspicious.svg"));
+    case ScanResult::Status::Unscanned:
+        return svgIcon(QStringLiteral(":/icons/result-unscanned.svg"));
     case ScanResult::Status::Error:
         break;
     }
@@ -154,6 +158,10 @@ QString resultText(ScanResult::Status status)
         return tr("Sain");
     case ScanResult::Status::Infected:
         return tr("Infecté");
+    case ScanResult::Status::Suspicious:
+        return tr("Suspect");
+    case ScanResult::Status::Unscanned:
+        return tr("Non analysé");
     case ScanResult::Status::Error:
         break;
     }
@@ -166,6 +174,10 @@ QString summaryText(const ScanSummary &summary)
     parts << plural(summary.scanned, "%1 fichier analysé", "%1 fichiers analysés");
     parts << (summary.infected == 0 ? tr("aucune menace")
                                     : plural(summary.infected, "%1 menace détectée", "%1 menaces détectées"));
+    if (summary.suspicious > 0)
+        parts << plural(summary.suspicious, "%1 fichier suspect", "%1 fichiers suspects");
+    if (summary.unscanned > 0)
+        parts << plural(summary.unscanned, "%1 fichier non analysé par clamd", "%1 fichiers non analysés par clamd");
     if (summary.errors > 0)
         parts << plural(summary.errors, "%1 erreur", "%1 erreurs");
     if (summary.skipped > 0)
@@ -217,7 +229,10 @@ Level summaryLevel(const ScanSummary &summary)
 {
     if (summary.infected > 0)
         return Level::Negative;
-    if (!summary.fatalError.isEmpty() || summary.errors > 0 || summary.cancelled)
+    // Les fichiers non analysés (archives chiffrées, fichiers trop gros) sont
+    // cités dans le bilan sans le colorer : un dossier de téléchargements en
+    // contient souvent, et un bandeau toujours orange ne signalerait plus rien.
+    if (!summary.fatalError.isEmpty() || summary.errors > 0 || summary.suspicious > 0 || summary.cancelled)
         return Level::Warning;
     return Level::Positive;
 }

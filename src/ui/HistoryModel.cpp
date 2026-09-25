@@ -55,6 +55,8 @@ QVariant HistoryModel::data(const QModelIndex &index, int role) const
             return QLocale().toString(record.scanned);
         case ThreatsColumn:
             return QLocale().toString(record.infected);
+        case WarningsColumn:
+            return QLocale().toString(record.suspicious + record.unscanned);
         case ErrorsColumn:
             return QLocale().toString(record.errors);
         case DurationColumn:
@@ -90,6 +92,8 @@ QVariant HistoryModel::headerData(int section, Qt::Orientation orientation, int 
         return tr("Fichiers");
     case ThreatsColumn:
         return tr("Menaces");
+    case WarningsColumn:
+        return tr("Avertissements");
     case ErrorsColumn:
         return tr("Erreurs");
     case DurationColumn:

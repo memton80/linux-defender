@@ -1,12 +1,15 @@
 #include "ScanJob.h"
 
 #include "ClamdClient.h"
+#include "ClamdConfig.h"
+#include "ThreatText.h"
 
 #include <QDir>
 #include <QDirIterator>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QLocale>
 #include <QLocalSocket>
 #include <QQueue>
 #include <QThread>
@@ -172,8 +175,18 @@ std::optional<ScanResult> ScanJob::parseReply(const QString &path, const QByteAr
     if (text == QLatin1String("OK")) {
         result.status = ScanResult::Status::Clean;
     } else if (text.endsWith(QLatin1String(" FOUND"))) {
-        result.status = ScanResult::Status::Infected;
         result.detail = text.chopped(6).trimmed();
+        switch (ThreatText::kind(result.detail)) {
+        case ThreatText::Kind::Threat:
+            result.status = ScanResult::Status::Infected;
+            break;
+        case ThreatText::Kind::Suspicious:
+            result.status = ScanResult::Status::Suspicious;
+            break;
+        case ThreatText::Kind::Unscanned:
+            result.status = ScanResult::Status::Unscanned;
+            break;
+        }
     } else if (text.endsWith(QLatin1String(" ERROR"))) {
         result.status = ScanResult::Status::Error;
         result.detail = tr("Erreur de clamd : %1").arg(text.chopped(6).trimmed());
@@ -181,6 +194,14 @@ std::optional<ScanResult> ScanJob::parseReply(const QString &path, const QByteAr
         return std::nullopt;
     }
     return result;
+}
+
+QString ScanJob::unscannedSizeText(qint64 limit)
+{
+    if (limit >= ClamdConfig::kEngineMaxFileSize)
+        return tr("Non analysé : plus gros que ce que clamd sait analyser (2 Go)");
+    return tr("Non analysé : plus gros que la limite de clamd (%1 Mo, directive MaxFileSize)")
+        .arg(QLocale().toString(double(limit) / (1024 * 1024), 'g', 4));
 }
 
 void ScanJob::run()
@@ -237,12 +258,24 @@ void ScanJob::run()
         sinceSignal.restart();
     };
     auto add = [&](ScanResult result) {
-        if (result.status == ScanResult::Status::Infected) {
+        switch (result.status) {
+        case ScanResult::Status::Infected:
             ++summary.infected;
             if (summary.threats.size() < ScanSummary::kMaxThreats)
                 summary.threats.append(result);
-        } else if (result.status == ScanResult::Status::Error)
+            break;
+        case ScanResult::Status::Suspicious:
+        case ScanResult::Status::Unscanned:
+            ++(result.status == ScanResult::Status::Suspicious ? summary.suspicious : summary.unscanned);
+            if (summary.warnings.size() < ScanSummary::kMaxThreats)
+                summary.warnings.append(result);
+            break;
+        case ScanResult::Status::Error:
             ++summary.errors;
+            break;
+        case ScanResult::Status::Clean:
+            break;
+        }
         batch.append(std::move(result));
         if (sinceSignal.hasExpired(kFlushInterval) || batch.size() >= kMaxBatchSize)
             flush();
@@ -370,12 +403,19 @@ ScanResult ScanJob::scanFile(const QString &path, QString *fatalError)
         return result;
     }
 
-    const std::optional<ScanResult> parsed = parseReply(path, reply.data);
+    std::optional<ScanResult> parsed = parseReply(path, reply.data);
     if (!parsed) {
         // clamd ne comprend pas FILDES : les fichiers suivants échoueraient tous.
         *fatalError = ClamdClient::errorMessage(ClamdClient::Error::ProtocolError, m_socketPath,
                                                 QString::fromUtf8(reply.data));
         return result;
+    }
+    // Au-delà de sa limite, clamd répond « OK » sans avoir lu le fichier
+    // (sauf avec AlertExceedsMax) : il n'est pas sain, il est non analysé.
+    const qint64 limit = m_options.clamdUnscannedAbove;
+    if (parsed->status == ScanResult::Status::Clean && limit > 0 && info.st_size > limit) {
+        parsed->status = ScanResult::Status::Unscanned;
+        parsed->detail = unscannedSizeText(limit);
     }
     return *parsed;
 }

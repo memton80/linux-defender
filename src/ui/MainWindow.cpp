@@ -9,6 +9,7 @@
 #include "Widgets.h"
 #include "core/ClamdWatcher.h"
 #include "core/Settings.h"
+#include "core/ThreatText.h"
 #include "system/OnAccessController.h"
 
 #include <QApplication>
@@ -81,7 +82,10 @@ MainWindow::MainWindow(ClamdWatcher *watcher, ScanManager *scans, OnAccessContro
     // Une menace détectée en temps réel est l'information la plus urgente :
     // la fenêtre s'ouvrira directement sur cette page.
     connect(m_onAccess, &OnAccessController::stateChanged, this, &MainWindow::updateNavigationIcons);
-    connect(m_onAccess, &OnAccessController::threatDetected, this, [this] {
+    connect(m_onAccess, &OnAccessController::threatDetected, this, [this](const OnAccessDetection &detection) {
+        // Archive chiffrée, fichier trop gros : seulement listé dans la page.
+        if (ThreatText::kind(detection.threat) == ThreatText::Kind::Unscanned)
+            return;
         m_dashboard->setRealtimeThreats(++m_realtimeThreats);
         showPage(OnAccessPage);
         updateNavigationIcons();

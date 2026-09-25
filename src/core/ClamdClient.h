@@ -78,6 +78,9 @@ public:
 
     // Message lisible par l'utilisateur pour une erreur (utilisé aussi par ScanJob).
     static QString errorMessage(Error error, const QString &socketPath, const QString &detail = {});
+    // Groupe que l'utilisateur doit rejoindre pour accéder au socket : celui du
+    // dossier s'il n'est pas traversable, sinon celui du socket lui-même.
+    static QString socketGroup(const QString &socketPath);
     // Traduit une erreur de QLocalSocket en erreur ClamdClient.
     static Error errorFromSocket(QLocalSocket::LocalSocketError error);
 

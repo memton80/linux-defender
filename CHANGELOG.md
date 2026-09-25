@@ -5,6 +5,29 @@ Les versions publiées correspondent aux tags `vX.Y.Z` (voir les
 dans le fichier `VERSION` ; avant la 1.0.2, les paquets construits hors tag portaient la version
 `0.0.0~dev`.
 
+## [Non publié]
+
+### Corrigé
+
+- **Fichiers trop gros pour clamd affichés « sains ».** Au-delà de sa limite `MaxFileSize`
+  (100 Mo par défaut) ou de 2 Go, clamd répond « OK » sans lire le fichier (vérifié avec ClamAV
+  1.5.4, virus compris). L'application lit maintenant cette limite dans la configuration de
+  clamd et signale ces fichiers **« non analysé »**. La page « Analyse » des paramètres affiche
+  la limite trouvée.
+- **Soupçons présentés comme des menaces.** Les détections heuristiques (`Heuristics.*` :
+  hameçonnage, exécutable malformé, macros...) et les programmes potentiellement indésirables
+  (`PUA.*`) sont classés **« suspect »** : notification sans alerte critique, bandeau orange au
+  lieu de rouge. Les archives chiffrées et les limites dépassées (`Heuristics.Encrypted.*`,
+  `Heuristics.Limits.Exceeded.*`) sont classées **« non analysé »** ; détectées en temps réel,
+  elles ne déclenchent plus d'alerte.
+
+### Ajouté
+
+- Filtre et compteur **Avertissements** (fichiers suspects et non analysés) dans la page
+  « Analyse », colonne dans l'historique, et liste des avertissements dans le détail d'une
+  analyse. Les historiques des versions précédentes restent lisibles.
+- Infobulle des résultats : signification de la signature en clair.
+
 ## [1.0.2] — 2026-09-24
 
 ### Modifié

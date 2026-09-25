@@ -3,6 +3,8 @@
 add_library(defender_core STATIC
     core/ClamdClient.h
     core/ClamdClient.cpp
+    core/ClamdConfig.h
+    core/ClamdConfig.cpp
     core/ClamdWatcher.h
     core/ClamdWatcher.cpp
     core/ScanHistory.h
@@ -90,7 +92,9 @@ qt_add_resources(linux-defender "icons"
     BASE ${DATA_DIR}/icons
     FILES
         ${DATA_DIR}/icons/linux-defender.svg
+        ${DATA_DIR}/icons/result-suspicious.svg
         ${DATA_DIR}/icons/result-threat.svg
+        ${DATA_DIR}/icons/result-unscanned.svg
         ${DATA_DIR}/icons/result-warning.svg
         ${DATA_DIR}/icons/status-error.svg
         ${DATA_DIR}/icons/status-ok.svg

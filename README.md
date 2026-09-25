@@ -176,13 +176,47 @@ Les dossiers sont parcourus récursivement ; les liens symboliques ne sont pas s
 par l'application avec vos droits, puis transmis à clamd (comme `clamdscan --fdpass`) : clamd peut
 donc analyser votre dossier personnel et vos clés USB sans avoir le droit de les lire lui-même.
 
-La liste affiche les menaces en premier (avec le nom donné par clamd), puis les erreurs, puis
+Chaque fichier reçoit l'un de ces statuts :
+
+| Statut | Signification |
+|---|---|
+| **Infecté** | signature d'un programme malveillant (ou fichier de test EICAR) |
+| **Suspect** | soupçon seulement : détection heuristique (`Heuristics.*` : hameçonnage, exécutable malformé, document à macros...) ou programme potentiellement indésirable (`PUA.*`) |
+| **Non analysé** | clamd n'a pas pu lire le fichier en entier : archive chiffrée (`Heuristics.Encrypted.*`), limite de taille dépassée (voir ci-dessous) |
+| **Erreur** | fichier illisible, erreur de clamd |
+| **Sain** | analysé, rien trouvé |
+
+La liste affiche les menaces en premier (avec le nom donné par clamd ; l'infobulle le traduit en
+clair), puis les fichiers suspects et non analysés (filtre « Avertissements »), les erreurs et
 les fichiers sains. Pour limiter la mémoire utilisée, seuls les 10 000 premiers fichiers sains
 sont listés ; les compteurs incluent tous les fichiers.
 
+Un fichier suspect est signalé par une notification (sans alerte critique) et colore le bandeau
+de l'accueil en orange. Un fichier non analysé est seulement cité dans le bilan : un dossier de
+téléchargements contient souvent des archives chiffrées ou des images disque.
+
 Chaque analyse terminée est enregistrée dans l'historique
 (`~/.local/share/linux-defender/history.json`, 100 analyses par défaut) avec ses 100 premières
-menaces.
+menaces et ses 100 premiers avertissements.
+
+#### Fichiers trop gros pour clamd
+
+clamd a ses propres limites (directives de sa configuration, valeurs par défaut de ClamAV 1.x) et,
+quand un fichier les dépasse, il répond « OK » **sans l'avoir analysé** — comme pour un fichier
+sain. Comportements vérifiés avec ClamAV 1.5.4 :
+
+| Cas | Réponse de clamd | Affiché par Linux Defender |
+|---|---|---|
+| fichier plus gros que `MaxFileSize` (100 Mo par défaut ; la limite elle-même est encore analysée) | « OK », fichier non lu | **Non analysé** : l'application lit `MaxFileSize` dans la configuration de clamd et compare la taille |
+| fichier de plus de 2 147 483 645 octets (2 Go), même avec `MaxFileSize 0` | « OK », fichier non lu | **Non analysé** |
+| archive dont le contenu décompressé dépasse `MaxScanSize` (400 Mo par défaut) | « OK » : seul le début est analysé | Sain — sauf avec `AlertExceedsMax yes` : **Non analysé** (`Heuristics.Limits.Exceeded.MaxScanSize`) |
+| fichier d'une archive plus gros que `MaxFileSize` | « OK » : il est tronqué et seul son début est analysé, même avec `AlertExceedsMax yes` | Sain |
+
+La configuration lue est celle du clamd utilisé : le fichier (`/etc/clamd.d/scan.conf`,
+`/etc/clamav/clamd.conf` ou `/etc/clamd.conf`) dont la directive `LocalSocket` est le socket de
+l'application, sinon le premier lisible, sinon les valeurs par défaut. La page « Analyse » des
+paramètres affiche la limite trouvée. Pour que les archives analysées en partie soient aussi
+signalées, ajoutez `AlertExceedsMax yes` à cette configuration, puis redémarrez clamd.
 
 ### Clés USB
 
@@ -271,6 +305,9 @@ Une détection affiche une notification du bureau (Plasma, GNOME...) :
 - plusieurs détections avant que vous ne l'ayez consultée (une archive décompressée, par
   exemple) : une seule alerte, mise à jour (« 5 menaces détectées »), plutôt qu'une par fichier ;
 - icône du thème (bouclier rouge de Breeze sous Plasma), celle de l'application sinon.
+- fichier seulement **suspect** (détection heuristique, programme potentiellement indésirable) :
+  notification normale, qui ne reste pas affichée ; fichier **non analysé** (archive chiffrée,
+  limite de taille dépassée) : seulement listé dans la page, sans notification.
 
 Pas d'aperçu du fichier dans l'alerte : pour le générer, le bureau ouvrirait le fichier
 malveillant. Les réglages des alertes (affichage, historique, mode « Ne pas déranger ») sont ceux
@@ -530,12 +567,13 @@ linux-defender/
 │   ├── main.cpp              # point d'entrée : relie le cœur, le système et l'UI
 │   ├── core/                 # logique métier : QtCore + QtNetwork, aucune dépendance à l'UI
 │   │   ├── ClamdClient.*     # communication avec clamd (socket Unix, protocole natif)
+│   │   ├── ClamdConfig.*     # configuration de clamd : socket, limites de taille
 │   │   ├── ClamdWatcher.*    # vérification périodique de l'état de clamd
 │   │   ├── ScanHistory.*     # historique des analyses (JSON)
 │   │   ├── ScanJob.*         # un scan (FILDES), dans son propre thread, avec ses options
 │   │   ├── ScanManager.*     # lance les scans, un à la fois, avec file d'attente
 │   │   ├── Settings.*        # réglages (QSettings) et leurs valeurs par défaut
-│   │   └── ThreatText.*      # textes des alertes : nom de menace lisible, chemin raccourci
+│   │   └── ThreatText.*      # nature d'une détection (menace, suspect, non analysé), textes des alertes
 │   ├── system/               # intégration au système, sans UI
 │   │   ├── UsbMonitor.*      # montage des clés USB (UDisks2 via D-Bus)
 │   │   ├── SingleInstance.*  # une seule instance à la fois
@@ -586,6 +624,8 @@ linux-defender/
 - [x] Interface : tableau de bord, historique des analyses, analyse rapide et complète,
       exclusions, paramètres en pages
 - [ ] Plus tard : quarantaine, planification, scans en parallèle, son des alertes
+
+Le détail des travaux en cours et à venir est dans [TODO.md](TODO.md).
 
 ## Historique des versions
 

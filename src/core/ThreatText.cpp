@@ -6,6 +6,8 @@
 #include <QLocale>
 #include <QStringList>
 
+#include <algorithm>
+
 namespace
 {
 constexpr int kMaxListedThreats = 3; // au-delà : « … et N autres »
@@ -137,6 +139,19 @@ QStringList threatLines(const QList<ThreatText::Threat> &threats, qint64 total)
 namespace ThreatText
 {
 
+Kind kind(const QString &signature)
+{
+    QString name = signature.trimmed();
+    if (name.endsWith(QLatin1String(".UNOFFICIAL")))
+        name.chop(11);
+    if (name.startsWith(QLatin1String("Heuristics.Encrypted."))
+        || name.startsWith(QLatin1String("Heuristics.Limits.Exceeded.")))
+        return Kind::Unscanned;
+    if (name.startsWith(QLatin1String("Heuristics.")) || name.startsWith(QLatin1String("PUA.")))
+        return Kind::Suspicious;
+    return Kind::Threat;
+}
+
 QString describe(const QString &signature)
 {
     QString name = signature.trimmed();
@@ -197,21 +212,33 @@ Alert realtimeAlert(const QList<Threat> &threats, const QString &home)
 {
     if (threats.isEmpty())
         return {};
+    const bool onlySuspicious = std::all_of(threats.cbegin(), threats.cend(), [](const Threat &threat) {
+        return kind(threat.name) == Kind::Suspicious;
+    });
     if (threats.size() == 1) {
         const Threat &threat = threats.first();
-        return {tr("Menace détectée : %1").arg(fileName(threat.path)),
+        return {(onlySuspicious ? tr("Fichier suspect : %1") : tr("Menace détectée : %1")).arg(fileName(threat.path)),
                 tr("%1\nDans %2, toujours en place.")
                     .arg(describe(threat.name), shortPath(QFileInfo(threat.path).absolutePath(), home))};
     }
     QStringList lines = threatLines(threats, threats.size());
     lines << tr("Aucun fichier n'a été supprimé ni déplacé.");
-    return {plural(threats.size(), "%1 menace détectée", "%1 menaces détectées"), lines.join(QLatin1Char('\n'))};
+    return {onlySuspicious ? plural(threats.size(), "%1 fichier suspect détecté", "%1 fichiers suspects détectés")
+                           : plural(threats.size(), "%1 menace détectée", "%1 menaces détectées"),
+            lines.join(QLatin1Char('\n'))};
 }
 
 Alert scanAlert(const QList<Threat> &firstThreats, qint64 total, const QString &summary)
 {
     const QStringList lines = QStringList{summary} + threatLines(firstThreats, total);
     return {plural(total, "%1 menace détectée par le scan", "%1 menaces détectées par le scan"),
+            lines.join(QLatin1Char('\n'))};
+}
+
+Alert suspiciousAlert(const QList<Threat> &firstSuspicious, qint64 total, const QString &summary)
+{
+    const QStringList lines = QStringList{summary} + threatLines(firstSuspicious, total);
+    return {plural(total, "%1 fichier suspect trouvé par l'analyse", "%1 fichiers suspects trouvés par l'analyse"),
             lines.join(QLatin1Char('\n'))};
 }
 

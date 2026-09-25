@@ -327,6 +327,10 @@ void DashboardPage::updateBanner()
             warnings << tr("La protection en temps réel est en erreur.");
         if (last && !last->fatalError.isEmpty())
             warnings << tr("La dernière analyse n'a pas pu aller au bout.");
+        if (last && last->suspicious > 0)
+            warnings << (last->suspicious > 1
+                             ? tr("La dernière analyse a trouvé %1 fichiers suspects : vérifiez-les.").arg(number(last->suspicious))
+                             : tr("La dernière analyse a trouvé un fichier suspect : vérifiez-le."));
 
         if (!warnings.isEmpty()) {
             level = Level::Warning;
@@ -335,6 +339,9 @@ void DashboardPage::updateBanner()
             if (onAccess == OnAccessController::State::Failed) {
                 action = BannerAction::ShowOnAccess;
                 actionText = tr("Voir le détail");
+            } else if (last && last->suspicious > 0) {
+                action = BannerAction::ShowHistory;
+                actionText = tr("Voir les fichiers");
             }
         } else if (onAccess == OnAccessController::State::Active) {
             title = tr("Votre système est protégé");
@@ -423,6 +430,10 @@ void DashboardPage::updateTiles()
         counts << (last->infected == 0 ? tr("aucune menace")
                                        : last->infected > 1 ? tr("%1 menaces").arg(number(last->infected))
                                                             : tr("1 menace"));
+        if (last->suspicious > 0)
+            counts << (last->suspicious > 1 ? tr("%1 suspects").arg(number(last->suspicious)) : tr("1 suspect"));
+        if (last->unscanned > 0)
+            counts << (last->unscanned > 1 ? tr("%1 non analysés").arg(number(last->unscanned)) : tr("1 non analysé"));
         if (last->errors > 0)
             counts << (last->errors > 1 ? tr("%1 erreurs").arg(number(last->errors)) : tr("1 erreur"));
         setTile(m_lastScanTile, last->infected > 0 ? StatusDisplay::threatIcon() : StatusDisplay::levelIcon(level),

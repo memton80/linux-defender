@@ -4,6 +4,7 @@
 
 #include <QAbstractTableModel>
 #include <QFont>
+#include <QIcon>
 
 /**
  * Liste des détections en temps réel (clamonacc), la plus récente en tête.
@@ -36,4 +37,5 @@ public:
 private:
     QList<OnAccessDetection> m_detections; // la plus récente en premier
     QFont m_threatFont;
+    QIcon m_icons[3]; // par ThreatText::Kind
 };

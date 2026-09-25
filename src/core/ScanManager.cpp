@@ -1,6 +1,7 @@
 #include "ScanManager.h"
 
 #include "ClamdClient.h"
+#include "ClamdConfig.h"
 
 ScanManager::ScanManager(ClamdClient *client, QObject *parent)
     : QObject(parent)
@@ -63,7 +64,10 @@ void ScanManager::startNext()
 
     const Request request = m_queue.takeFirst();
     m_origin = request.origin;
-    m_job = new ScanJob(m_client->socketPath(), request.paths, m_options, this);
+    // Limite de taille de clamd relue à chaque analyse : sa configuration a pu changer.
+    ScanOptions options = m_options;
+    options.clamdUnscannedAbove = ClamdConfig::forSocket(m_client->socketPath()).unscannedAbove();
+    m_job = new ScanJob(m_client->socketPath(), request.paths, options, this);
 
     // Le ScanJob émet depuis son thread : ces connexions passent par la file
     // d'événements et les signaux arrivent dans le thread de l'interface.

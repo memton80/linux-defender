@@ -129,6 +129,7 @@ void TrayIcon::acknowledgeThreats()
 void TrayIcon::onScanStarted(const QStringList &paths, ScanManager::Origin origin)
 {
     m_scanThreats.clear();
+    m_scanSuspicious.clear();
     // Scan automatique : on prévient l'utilisateur, qui ne l'a pas demandé
     // (et ne pourra pas éjecter la clé tant que le scan lit ses fichiers).
     if (origin == ScanManager::Origin::Usb && Settings::usbNotify()) {
@@ -150,6 +151,8 @@ void TrayIcon::onResults(const QList<ScanResult> &results)
     for (const ScanResult &result : results) {
         if (result.status == ScanResult::Status::Infected && m_scanThreats.size() < kMaxThreatsInNotification)
             m_scanThreats.append({result.path, result.detail});
+        else if (result.status == ScanResult::Status::Suspicious && m_scanSuspicious.size() < kMaxThreatsInNotification)
+            m_scanSuspicious.append({result.path, result.detail});
     }
 }
 
@@ -178,6 +181,17 @@ void TrayIcon::onScanFinished(const ScanSummary &summary, ScanManager::Origin or
         }
         m_notifier.close(kScanKey); // « Analyse en cours… »
         notify(kScanThreatsKey, notification, StatusDisplay::threatIcon());
+    } else if (summary.suspicious > 0) {
+        // Soupçons seulement : toujours signalés, mais sans alerte critique.
+        const ThreatText::Alert alert =
+            ThreatText::suspiciousAlert(m_scanSuspicious, summary.suspicious, StatusDisplay::summaryText(summary));
+        notification.title = alert.title;
+        notification.body = alert.body;
+        notification.icon = notificationIcon(QStringLiteral("security-medium"),
+                                             QStringLiteral(":/icons/result-suspicious.svg"));
+        notification.actions.append({QStringLiteral("details"), tr("Afficher les détails")});
+        m_notifier.close(kScanKey);
+        notify(kScanThreatsKey, notification, StatusDisplay::resultIcon(ScanResult::Status::Suspicious));
     } else if (!summary.fatalError.isEmpty()) {
         notification.title = tr("Analyse impossible");
         notification.body = summary.fatalError;
@@ -198,11 +212,16 @@ void TrayIcon::onScanFinished(const ScanSummary &summary, ScanManager::Origin or
         notify(kScanKey, notification, StatusDisplay::resultIcon(ScanResult::Status::Clean));
     }
     m_scanThreats.clear();
+    m_scanSuspicious.clear();
     updateState();
 }
 
 void TrayIcon::onRealtimeThreat(const OnAccessDetection &detection)
 {
+    // Archive chiffrée, fichier trop gros : listé dans la fenêtre, sans alerte
+    // (un téléchargement protégé par mot de passe n'est pas une menace).
+    if (ThreatText::kind(detection.threat) == ThreatText::Kind::Unscanned)
+        return;
     m_threatsPending = true;
     m_threatSummary = tr("Menace détectée en temps réel : %1").arg(ThreatText::shortPath(detection.path));
     // Toutes les détections pas encore consultées tiennent dans une seule
@@ -226,10 +245,19 @@ void TrayIcon::showRealtimeAlert()
     DesktopNotifier::Notification notification;
     notification.title = alert.title;
     notification.body = alert.body;
-    notification.icon = notificationIcon(QStringLiteral("security-low"), QStringLiteral(":/icons/result-threat.svg"));
-    // Critique : reste affichée jusqu'à sa fermeture, même en mode « Ne pas déranger ».
-    notification.urgency = DesktopNotifier::Urgency::Critical;
-    notification.timeoutMsecs = 0;
+    // Critique : reste affichée jusqu'à sa fermeture, même en mode « Ne pas
+    // déranger ». Des fichiers seulement suspects n'en justifient pas autant.
+    const bool threat = std::any_of(m_realtimeThreats.cbegin(), m_realtimeThreats.cend(), [](const ThreatText::Threat &t) {
+        return ThreatText::kind(t.name) == ThreatText::Kind::Threat;
+    });
+    if (threat) {
+        notification.icon = notificationIcon(QStringLiteral("security-low"), QStringLiteral(":/icons/result-threat.svg"));
+        notification.urgency = DesktopNotifier::Urgency::Critical;
+        notification.timeoutMsecs = 0;
+    } else {
+        notification.icon = notificationIcon(QStringLiteral("security-medium"),
+                                             QStringLiteral(":/icons/result-suspicious.svg"));
+    }
     notification.actions = {{QStringLiteral("default"), tr("Afficher les détails")},
                             {QStringLiteral("details"), tr("Afficher les détails")}};
     // Pas d'aperçu du fichier dans la notification : pour le générer, le
