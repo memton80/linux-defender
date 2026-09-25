@@ -10,8 +10,8 @@ dans le fichier `VERSION` ; avant la 1.0.2, les paquets construits hors tag port
 ### Corrigé
 
 - **Fichiers trop gros pour clamd affichés « sains ».** Au-delà de sa limite `MaxFileSize`
-  (100 Mo par défaut) ou de 2 Go, clamd répond « OK » sans lire le fichier (vérifié avec ClamAV
-  1.5.4, virus compris). L'application lit maintenant cette limite dans la configuration de
+  (100 Mo par défaut, 25 Mo dans la configuration installée par Debian et Ubuntu) ou de 2 Go,
+  clamd répond « OK » sans lire le fichier (vérifié avec ClamAV 1.5.4, virus compris). L'application lit maintenant cette limite dans la configuration de
   clamd et signale ces fichiers **« non analysé »**. La page « Analyse » des paramètres affiche
   la limite trouvée.
 - **Soupçons présentés comme des menaces.** Les détections heuristiques (`Heuristics.*` :
@@ -23,6 +23,16 @@ dans le fichier `VERSION` ; avant la 1.0.2, les paquets construits hors tag port
 
 ### Ajouté
 
+- **Page Diagnostic** : clamd (service arrêté, en échec ou absent ; ligne `Example` et socket
+  désactivé de Fedora), accès au socket (groupe à rejoindre, ou session à rouvrir), signatures et
+  `clamav-freshclam`, SELinux (`antivirus_can_scan_system`), `AlertExceedsMax`, protection en temps
+  réel et limite inotify. Chaque problème a son explication, la commande exacte à copier et, si
+  possible, une **correction en un clic**. Le bandeau de l'accueil y mène (« Résoudre »).
+- **Case « Activer la protection en temps réel »** dans la page du même nom.
+- Programme d'aide `/usr/libexec/linux-defender-helper` (paquets `.deb` et `.rpm`), lancé par
+  `pkexec` sous l'action polkit `io.github.memton80.linux-defender.manage` : mot de passe
+  administrateur retenu quelques minutes, liste fermée d'actions, copie de la configuration de
+  clamd avant modification. Les paquets recommandent `pkexec` (Debian, Ubuntu) ou `polkit` (Fedora).
 - Filtre et compteur **Avertissements** (fichiers suspects et non analysés) dans la page
   « Analyse », colonne dans l'historique, et liste des avertissements dans le détail d'une
   analyse. Les historiques des versions précédentes restent lisibles.

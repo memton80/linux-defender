@@ -72,6 +72,27 @@ QString OnAccessController::clamonaccPath() const
     return m_clamonacc;
 }
 
+bool OnAccessController::isEnabled() const
+{
+    // « enabled », « enabled-runtime », « linked »... : démarré avec la machine.
+    // Un service lancé à la main sans être activé compte aussi : il tourne.
+    const QString fileState = m_unit.value(QStringLiteral("UnitFileState")).toString();
+    return fileState.startsWith(QLatin1String("enabled")) || m_state == State::Active;
+}
+
+bool OnAccessController::inotifyLimitReached() const
+{
+    return isInotifyLimitError(m_lastError);
+}
+
+bool OnAccessController::isInotifyLimitError(const QString &logError)
+{
+    // « ClamInotif: could not watch path '/home', No space left on device » :
+    // limite atteinte au démarrage, clamonacc s'arrête aussitôt.
+    return logError.startsWith(QLatin1String("ClamInotif: could not watch path"))
+        && logError.contains(QLatin1String("No space left on device"));
+}
+
 QStringList OnAccessController::watchedPaths() const
 {
     return m_watchedPaths;
@@ -228,17 +249,21 @@ QString OnAccessController::findClamonacc(const QStringList &directories)
     return QStandardPaths::findExecutable(QStringLiteral("clamonacc"), directories);
 }
 
-QString OnAccessController::installCommand(const QString &osReleasePath)
+QStringList OnAccessController::distributionIds(const QString &osReleasePath)
 {
     QFile file(osReleasePath);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return {};
     const QString content = QString::fromUtf8(file.readAll());
     // ID : la distribution ; ID_LIKE : celles dont elle dérive (ubuntu -> debian).
-    const QStringList ids = (osReleaseValue(content, QStringLiteral("ID")) + QLatin1Char(' ')
-                             + osReleaseValue(content, QStringLiteral("ID_LIKE")))
-                                .split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    return (osReleaseValue(content, QStringLiteral("ID")) + QLatin1Char(' ')
+            + osReleaseValue(content, QStringLiteral("ID_LIKE")))
+        .split(QLatin1Char(' '), Qt::SkipEmptyParts);
+}
 
+QString OnAccessController::installCommand(const QString &osReleasePath)
+{
+    const QStringList ids = distributionIds(osReleasePath);
     const auto is = [&ids](const char *id) { return ids.contains(QLatin1String(id)); };
     if (is("fedora") || is("rhel") || is("centos"))
         return QStringLiteral("sudo dnf install clamav clamd");
@@ -277,10 +302,7 @@ QString OnAccessController::explainError(const QString &logError)
         return tr("clamonacc ne peut pas joindre clamd : vérifiez que clamd est démarré et que le "
                   "socket indiqué par LocalSocket dans %1 est le bon.")
             .arg(QString::fromLatin1(kConfigPath));
-    // « ClamInotif: could not watch path '/home', No space left on device » :
-    // limite atteinte au démarrage, clamonacc s'arrête aussitôt.
-    if (logError.startsWith(QLatin1String("ClamInotif: could not watch path"))
-        && logError.contains(QLatin1String("No space left on device")))
+    if (isInotifyLimitError(logError))
         return tr("Trop de dossiers à surveiller : augmentez la limite du noyau "
                   "fs.inotify.max_user_watches (voir le README).");
     return tr("Erreur de clamonacc : %1\nDétails : journalctl -u %2").arg(logError, QString::fromLatin1(kServiceName));

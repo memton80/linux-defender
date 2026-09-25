@@ -4,6 +4,7 @@
 #include "core/ScanJob.h"
 #include "core/ScanManager.h"
 #include "system/OnAccessController.h"
+#include "system/SystemDiagnostics.h"
 
 #include <QColor>
 #include <QDateTime>
@@ -49,6 +50,10 @@ Level summaryLevel(const ScanSummary &summary);
 // Dates et durées : « il y a 5 minutes », « hier à 14:03 » ; « 3 min 12 s ».
 QString relativeTime(const QDateTime &time);
 QString durationText(qint64 msecs);
+
+// Diagnostic : couleur et icône d'une vérification (Ok : vert, Info : neutre).
+Level diagnosticLevel(DiagnosticItem::Level level);
+QIcon diagnosticIcon(DiagnosticItem::Level level);
 
 // Protection en temps réel.
 QIcon onAccessIcon(OnAccessController::State state);

@@ -8,7 +8,7 @@ find_program(DBUS_RUN_SESSION dbus-run-session)
 # faux serveur de notifications).
 set(DBUS_TESTS tst_usbmonitor tst_onaccess tst_notifications)
 
-foreach(test tst_clamdclient tst_clamdconfig tst_clamdwatcher tst_scanjob tst_scanhistory tst_settings tst_singleinstance tst_autostart
+foreach(test tst_clamdclient tst_clamdconfig tst_clamdwatcher tst_diagnostics tst_scanjob tst_scanhistory tst_settings tst_singleinstance tst_autostart
              tst_usbmonitor tst_onaccess tst_notifications)
     qt_add_executable(${test} ${test}.cpp FakeClamd.h)
     target_link_libraries(${test} PRIVATE defender_core defender_system Qt6::Test)
@@ -21,3 +21,8 @@ endforeach()
 
 # Dossier des fichiers de la protection en temps réel générés par CMake.
 target_compile_definitions(tst_onaccess PRIVATE DEFENDER_ONACCESS_GENERATED_DIR="${DEFENDER_ONACCESS_GENERATED_DIR}")
+
+# Programme d'aide (script shell), en mode test : racine temporaire, commandes
+# affichées au lieu d'être lancées.
+configure_file(tst_helper.sh.in ${CMAKE_CURRENT_BINARY_DIR}/tst_helper.sh @ONLY)
+add_test(NAME tst_helper COMMAND sh ${CMAKE_CURRENT_BINARY_DIR}/tst_helper.sh ${DEFENDER_HELPER_GENERATED})

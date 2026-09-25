@@ -266,6 +266,28 @@ QString durationText(qint64 msecs)
     return tr("%1 h %2 min").arg(seconds / 3600).arg((seconds % 3600) / 60, 2, 10, QLatin1Char('0'));
 }
 
+Level diagnosticLevel(DiagnosticItem::Level level)
+{
+    switch (level) {
+    case DiagnosticItem::Level::Ok:
+        return Level::Positive;
+    case DiagnosticItem::Level::Warning:
+        return Level::Warning;
+    case DiagnosticItem::Level::Error:
+        return Level::Negative;
+    case DiagnosticItem::Level::Info:
+        break;
+    }
+    return Level::Neutral;
+}
+
+QIcon diagnosticIcon(DiagnosticItem::Level level)
+{
+    if (level == DiagnosticItem::Level::Info)
+        return QIcon::fromTheme(QStringLiteral("dialog-information"), levelIcon(Level::Neutral));
+    return levelIcon(diagnosticLevel(level));
+}
+
 QIcon onAccessIcon(OnAccessController::State state)
 {
     switch (state) {

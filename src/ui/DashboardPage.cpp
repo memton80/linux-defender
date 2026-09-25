@@ -64,12 +64,13 @@ QLabel *sectionTitle(const QString &text)
 }
 
 DashboardPage::DashboardPage(ClamdWatcher *watcher, ScanManager *scans, OnAccessController *onAccess,
-                             ScanHistory *history, QWidget *parent)
+                             ScanHistory *history, SystemDiagnostics *diagnostics, QWidget *parent)
     : QWidget(parent)
     , m_watcher(watcher)
     , m_scans(scans)
     , m_onAccess(onAccess)
     , m_history(history)
+    , m_diagnostics(diagnostics)
 {
     // Bandeau d'état : grande icône, titre, explication, action la plus utile.
     m_bannerIcon = new QLabel;
@@ -95,6 +96,9 @@ DashboardPage::DashboardPage(ClamdWatcher *watcher, ScanManager *scans, OnAccess
             break;
         case BannerAction::ShowHistory:
             emit showHistoryRequested();
+            break;
+        case BannerAction::ShowDiagnostics:
+            emit showDiagnosticsRequested();
             break;
         case BannerAction::None:
             break;
@@ -197,6 +201,7 @@ DashboardPage::DashboardPage(ClamdWatcher *watcher, ScanManager *scans, OnAccess
     connect(m_watcher, &ClamdWatcher::checkFinished, this, &DashboardPage::updateTiles);
     connect(m_onAccess, &OnAccessController::stateChanged, this, &DashboardPage::refresh);
     connect(m_history, &ScanHistory::changed, this, &DashboardPage::refresh);
+    connect(m_diagnostics, &SystemDiagnostics::changed, this, &DashboardPage::refresh);
     connect(m_scans, &ScanManager::scanStarted, this, &DashboardPage::refresh);
     connect(m_scans, &ScanManager::scanFinished, this, &DashboardPage::refresh);
     connect(m_scans, &ScanManager::counting, this, [this] { m_scanProgress->setRange(0, 0); });
@@ -295,8 +300,9 @@ void DashboardPage::updateBanner()
         level = Level::Negative;
         title = tr("Antivirus indisponible");
         text = tr("clamd ne répond pas : aucune analyse n'est possible.\n%1").arg(m_watcher->errorMessage());
-        action = BannerAction::Check;
-        actionText = tr("Vérifier maintenant");
+        // Le diagnostic donne la cause précise et, souvent, la correction.
+        action = BannerAction::ShowDiagnostics;
+        actionText = tr("Résoudre le problème");
     } else if (m_realtimeThreats > 0) {
         level = Level::Negative;
         title = m_realtimeThreats > 1 ? tr("%1 menaces détectées en temps réel").arg(m_realtimeThreats)
@@ -318,30 +324,50 @@ void DashboardPage::updateBanner()
         title = StatusDisplay::title(clamd);
         action = BannerAction::None;
     } else {
-        QStringList warnings;
+        // Points d'attention, chacun avec l'action qui y répond ; le bouton
+        // propose celle du premier.
+        QList<QPair<QString, BannerAction>> warnings;
         const ClamdVersion version = m_watcher->version();
         if (StatusDisplay::signaturesOutdated(version, Settings::signaturesMaxAge()))
-            warnings << tr("Les signatures datent de %1 jours : vérifiez que freshclam les met à jour.")
-                            .arg(StatusDisplay::signaturesAgeDays(version));
+            warnings.append({tr("Les signatures datent de %1 jours : vérifiez que freshclam les met à jour.")
+                                 .arg(StatusDisplay::signaturesAgeDays(version)),
+                             BannerAction::ShowDiagnostics});
         if (onAccess == OnAccessController::State::Failed)
-            warnings << tr("La protection en temps réel est en erreur.");
+            warnings.append({tr("La protection en temps réel est en erreur."), BannerAction::ShowOnAccess});
+        // Problème relevé par le diagnostic seul (SELinux...) : clamd, signatures
+        // et temps réel sont déjà traités ci-dessus.
+        if (const std::optional<DiagnosticItem> problem = m_diagnostics->mostSevere();
+            problem && problem->id != QLatin1String("clamd") && problem->id != QLatin1String("signatures")
+            && problem->id != QLatin1String("onaccess"))
+            warnings.append({problem->title + QLatin1Char('.'), BannerAction::ShowDiagnostics});
         if (last && !last->fatalError.isEmpty())
-            warnings << tr("La dernière analyse n'a pas pu aller au bout.");
+            warnings.append({tr("La dernière analyse n'a pas pu aller au bout."), BannerAction::ShowHistory});
         if (last && last->suspicious > 0)
-            warnings << (last->suspicious > 1
-                             ? tr("La dernière analyse a trouvé %1 fichiers suspects : vérifiez-les.").arg(number(last->suspicious))
-                             : tr("La dernière analyse a trouvé un fichier suspect : vérifiez-le."));
+            warnings.append({last->suspicious > 1
+                                 ? tr("La dernière analyse a trouvé %1 fichiers suspects : vérifiez-les.")
+                                       .arg(number(last->suspicious))
+                                 : tr("La dernière analyse a trouvé un fichier suspect : vérifiez-le."),
+                             BannerAction::ShowHistory});
 
         if (!warnings.isEmpty()) {
             level = Level::Warning;
             title = tr("Attention requise");
-            text = warnings.join(QLatin1Char('\n'));
-            if (onAccess == OnAccessController::State::Failed) {
-                action = BannerAction::ShowOnAccess;
+            QStringList lines;
+            for (const auto &warning : std::as_const(warnings))
+                lines << warning.first;
+            text = lines.join(QLatin1Char('\n'));
+            action = warnings.first().second;
+            switch (action) {
+            case BannerAction::ShowDiagnostics:
+                actionText = tr("Résoudre");
+                break;
+            case BannerAction::ShowOnAccess:
                 actionText = tr("Voir le détail");
-            } else if (last && last->suspicious > 0) {
+                break;
+            default:
                 action = BannerAction::ShowHistory;
-                actionText = tr("Voir les fichiers");
+                actionText = tr("Voir l'analyse");
+                break;
             }
         } else if (onAccess == OnAccessController::State::Active) {
             title = tr("Votre système est protégé");

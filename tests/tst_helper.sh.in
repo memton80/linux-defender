@@ -1,0 +1,129 @@
+#!/bin/sh
+# Test du programme d'aide (linux-defender-helper), en mode test : fichiers
+# sous une racine temporaire, commandes du système affichées au lieu d'être
+# lancées. Fichier généré à partir de tests/tst_helper.sh.in (nom du service).
+# Usage : tst_helper.sh <programme d'aide généré>
+set -eu
+
+helper=${1:?"Usage : tst_helper.sh <programme d'aide>"}
+root=$(mktemp -d)
+trap 'rm -rf "$root"' EXIT
+export LINUX_DEFENDER_HELPER_ROOT="$root"
+failures=0
+
+check() { # description, commande...
+    description=$1
+    shift
+    if "$@"; then
+        echo "PASS   : $description"
+    else
+        echo "FAIL!  : $description"
+        failures=$((failures + 1))
+    fi
+}
+
+run_helper() { # sortie de la commande dans $root/out, code de sortie dans $status
+    status=0
+    sh "$helper" "$@" > "$root/out" 2> "$root/err" || status=$?
+}
+
+run_as_user() { # comme pkexec : utilisateur qui a demandé l'action dans PKEXEC_UID
+    status=0
+    PKEXEC_UID=$(id -u) sh "$helper" "$@" > "$root/out" 2> "$root/err" || status=$?
+}
+
+# Système simulé : Fedora, clamd@scan installé, configuration d'origine.
+mkdir -p "$root/services" "$root/etc/clamd.d"
+touch "$root/services/clamd@scan.service" "$root/services/@DEFENDER_ONACCESS_SERVICE@"
+printf 'clamav:x:900:\nvirusgroup:x:901:\n' > "$root/etc/group"
+cat > "$root/etc/clamd.d/scan.conf" <<'CONF'
+# Comment or remove the line below.
+Example
+#LogFile /var/log/clamd.scan
+#LocalSocket /run/clamd.scan/clamd.sock
+#LocalSocketGroup virusgroup
+#AlertExceedsMax no
+MaxFileSize 25M
+CONF
+config="$root/etc/clamd.d/scan.conf"
+
+# Appels invalides.
+run_helper
+check "sans action : code 2" [ "$status" -eq 2 ]
+run_helper inconnue
+check "action inconnue : code 2" [ "$status" -eq 2 ]
+run_helper clamd-start en-trop
+check "argument en trop : code 2" [ "$status" -eq 2 ]
+
+# clamd-configure : Example commentée, LocalSocket réactivée, copie d'origine.
+run_helper clamd-configure
+check "clamd-configure réussit" [ "$status" -eq 0 ]
+check "Example commentée" grep -qx '#Example' "$config"
+check "LocalSocket réactivée à sa place" grep -qx 'LocalSocket /run/clamd.scan/clamd.sock' "$config"
+check "un seul LocalSocket actif" [ "$(grep -c '^LocalSocket' "$config")" -eq 1 ]
+check "autres lignes intactes" grep -qx '#LocalSocketGroup virusgroup' "$config"
+check "copie d'origine gardée" grep -qx 'Example' "$config.linux-defender-orig"
+check "clamd activé puis redémarré" [ "$(cat "$root/out")" = "systemctl enable clamd@scan.service
+systemctl restart clamd@scan.service" ]
+
+# Une seconde fois : rien ne change, la copie d'origine reste celle d'origine.
+cp "$config" "$root/before"
+run_helper clamd-configure
+check "clamd-configure idempotent" cmp -s "$config" "$root/before"
+check "copie d'origine inchangée" grep -qx 'Example' "$config.linux-defender-orig"
+
+# AlertExceedsMax : ligne commentée réactivée, puis valeur remplacée.
+run_helper clamd-alert-exceeds-max
+check "AlertExceedsMax activée" grep -qx 'AlertExceedsMax yes' "$config"
+check "un seul AlertExceedsMax" [ "$(grep -c 'AlertExceedsMax' "$config")" -eq 1 ]
+check "clamd redémarré s'il tournait" [ "$(cat "$root/out")" = "systemctl try-restart clamd@scan.service" ]
+sed -i 's/^AlertExceedsMax yes/AlertExceedsMax no/' "$config"
+run_helper clamd-alert-exceeds-max
+check "AlertExceedsMax no remplacée" grep -qx 'AlertExceedsMax yes' "$config"
+sed -i '/AlertExceedsMax/d' "$config"
+run_helper clamd-alert-exceeds-max
+check "AlertExceedsMax absente ajoutée" [ "$(tail -n 1 "$config")" = "AlertExceedsMax yes" ]
+
+# Services.
+run_helper clamd-start
+check "clamd-start" [ "$(cat "$root/out")" = "systemctl enable --now clamd@scan.service" ]
+run_helper onaccess-enable
+check "onaccess-enable" [ "$(cat "$root/out")" = "systemctl enable --now @DEFENDER_ONACCESS_SERVICE@" ]
+touch "$root/services/clamav-clamonacc.service"
+run_helper onaccess-enable
+check "onaccess-enable désactive le clamonacc de la distribution" [ "$(cat "$root/out")" = "systemctl disable --now clamav-clamonacc.service
+systemctl enable --now @DEFENDER_ONACCESS_SERVICE@" ]
+run_helper onaccess-disable
+check "onaccess-disable" [ "$(cat "$root/out")" = "systemctl disable --now @DEFENDER_ONACCESS_SERVICE@" ]
+run_helper freshclam-enable
+check "freshclam absent : code 3" [ "$status" -eq 3 ]
+check "freshclam absent : message" [ -s "$root/err" ]
+touch "$root/services/clamav-freshclam.service"
+run_helper freshclam-enable
+check "freshclam-enable" [ "$(cat "$root/out")" = "systemctl enable --now clamav-freshclam.service" ]
+run_helper selinux-allow-scan
+check "selinux-allow-scan" [ "$(cat "$root/out")" = "setsebool -P antivirus_can_scan_system 1" ]
+
+# inotify : fichier sysctl écrit, limite appliquée tout de suite.
+run_helper inotify-raise
+check "inotify-raise : fichier sysctl" grep -qx 'fs.inotify.max_user_watches = 524288' "$root/etc/sysctl.d/90-linux-defender.conf"
+check "inotify-raise : appliquée" grep -qx 'sysctl -q -w fs.inotify.max_user_watches=524288' "$root/out"
+
+# Groupe du socket : liste fermée, utilisateur de pkexec seulement.
+run_as_user socket-group-add virusgroup
+check "socket-group-add" [ "$(cat "$root/out")" = "usermod -aG virusgroup $(id -un)" ]
+run_as_user socket-group-add wheel
+check "groupe hors liste refusé" [ "$status" -eq 3 ]
+run_as_user socket-group-add clamscan
+check "groupe absent du système refusé" [ "$status" -eq 3 ]
+run_helper socket-group-add clamav
+check "sans PKEXEC_UID : refusé" [ "$status" -eq 3 ]
+
+# Aucun service clamd : message clair.
+rm "$root/services/clamd@scan.service"
+run_helper clamd-start
+check "sans clamd : code 3" [ "$status" -eq 3 ]
+check "sans clamd : message" grep -q "Aucun service clamd" "$root/err"
+
+echo "Totals: $failures échec(s)"
+[ "$failures" -eq 0 ]

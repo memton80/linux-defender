@@ -23,21 +23,21 @@ analysé, ni comme « menace » ce qui n'est qu'un soupçon.
 
 ## 2. Diagnostic et corrections en un clic (polkit)
 
-- [ ] Programme d'aide `linux-defender-helper` lancé par `pkexec`, avec une action polkit
+- [x] Programme d'aide `linux-defender-helper` lancé par `pkexec`, avec une action polkit
       dédiée (`auth_admin_keep` : un seul mot de passe pour plusieurs corrections). Liste
       fermée d'actions, sans argument libre
-- [ ] Page **Diagnostic** : chaque vérification avec son explication, la commande exacte à
+- [x] Page **Diagnostic** : chaque vérification avec son explication, la commande exacte à
       copier et, si possible, un bouton « Corriger »
-  - [ ] clamd : service arrêté, en échec, absent ; ligne `Example` et `LocalSocket` de Fedora
-  - [ ] accès au socket : groupe à rejoindre, ou session à rouvrir après l'ajout au groupe
-  - [ ] signatures obsolètes et service `clamav-freshclam`
-  - [ ] SELinux : booléen `antivirus_can_scan_system`
-  - [ ] `AlertExceedsMax` (archives analysées en partie par clamd)
-  - [ ] protection en temps réel, limite inotify
-- [ ] Case **Activer la protection en temps réel** (page Protection en temps réel)
-- [ ] Bandeau de l'accueil : « Résoudre » mène au diagnostic
-- [ ] Paquets : programme d'aide, action polkit, dépendance à pkexec
-- [ ] Tests (évaluation du diagnostic, modifications de configuration par le programme d'aide)
+  - [x] clamd : service arrêté, en échec, absent ; ligne `Example` et `LocalSocket` de Fedora
+  - [x] accès au socket : groupe à rejoindre, ou session à rouvrir après l'ajout au groupe
+  - [x] signatures obsolètes et service `clamav-freshclam`
+  - [x] SELinux : booléen `antivirus_can_scan_system`
+  - [x] `AlertExceedsMax` (archives analysées en partie par clamd)
+  - [x] protection en temps réel, limite inotify
+- [x] Case **Activer la protection en temps réel** (page Protection en temps réel)
+- [x] Bandeau de l'accueil : « Résoudre » mène au diagnostic
+- [x] Paquets : programme d'aide, action polkit, dépendance à pkexec
+- [x] Tests (évaluation du diagnostic, modifications de configuration par le programme d'aide)
 
 ## 3. Intégration au gestionnaire de fichiers
 

@@ -32,6 +32,7 @@ public:
     State state() const;
     ClamdVersion version() const;  // renseigné si state() == Connected
     QString errorMessage() const;  // renseigné si state() == Error
+    ClamdClient::Error error() const; // NoError sauf si state() == Error
     QDateTime lastCheck() const;   // invalide tant qu'aucune vérification n'est terminée
     QString socketPath() const;
 
@@ -51,7 +52,7 @@ signals:
     void checkFinished();
 
 private:
-    void finishCheck(State state, const ClamdVersion &version, const QString &errorMessage);
+    void finishCheck(State state, const ClamdVersion &version, ClamdClient::Error error, const QString &errorMessage);
 
     ClamdClient *m_client;
     QTimer m_timer;
@@ -59,5 +60,6 @@ private:
     State m_state = State::Unknown;
     ClamdVersion m_version;
     QString m_errorMessage;
+    ClamdClient::Error m_error = ClamdClient::Error::NoError;
     QDateTime m_lastCheck;
 };

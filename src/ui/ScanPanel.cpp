@@ -217,7 +217,11 @@ ScanPanel::ScanPanel(ScanManager *scans, ScanHistory *history, QWidget *parent)
     // Largeurs initiales tirées de la police du système, pas de valeurs en pixels.
     const int charWidth = fontMetrics().averageCharWidth();
     const int iconWidth = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
-    header->resizeSection(ScanResultsModel::StatusColumn, iconWidth + 12 * charWidth);
+    int statusWidth = 0;
+    for (int status = 0; status < ScanResult::kStatusCount; ++status)
+        statusWidth = qMax(statusWidth, fontMetrics().horizontalAdvance(StatusDisplay::resultText(ScanResult::Status(status))));
+    // Le texte en gras (menaces) est un peu plus large : marge de 4 caractères.
+    header->resizeSection(ScanResultsModel::StatusColumn, iconWidth + statusWidth + 4 * charWidth);
     header->resizeSection(ScanResultsModel::DetailColumn, 40 * charWidth);
     m_viewStack = new PlaceholderStack(m_view, QString());
 

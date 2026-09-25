@@ -16,7 +16,11 @@ de ClamAV. Elle affiche l'état de la protection (tableau de bord et zone de
 notification), analyse à la demande des fichiers et des dossiers (analyse
 rapide, complète ou personnalisée, avec exclusions), analyse automatiquement
 les clés USB et cartes mémoire au moment de leur montage, et garde un
-historique des analyses.
+historique des analyses. Sa page Diagnostic vérifie l'installation (clamd,
+accès au socket, signatures, SELinux, protection en temps réel) et applique
+les corrections avec
+.BR pkexec (1),
+après le mot de passe administrateur.
 .PP
 Pour scanner, l'application ouvre elle-même chaque fichier et le transmet à
 clamd (commande FILDES) : clamd peut ainsi analyser le dossier personnel et les
@@ -51,6 +55,8 @@ Historique des analyses.
 Présent quand le démarrage automatique est activé.
 .SH VOIR AUSSI
 .BR clamd (8),
+.BR clamonacc (8),
+.BR pkexec (1),
 .BR clamdscan (1),
 .BR clamd.conf (5)
 .PP

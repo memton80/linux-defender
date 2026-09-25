@@ -4,19 +4,23 @@
 
 class ClamdWatcher;
 class DashboardPage;
+class DiagnosticsPanel;
 class HistoryPanel;
 class OnAccessController;
 class OnAccessPanel;
+class PrivilegedHelper;
 class QListWidget;
 class QStackedWidget;
 class ScanHistory;
 class ScanManager;
 class ScanPanel;
+class SystemDiagnostics;
 
 /**
- * Fenêtre principale : barre latérale de navigation et quatre pages,
+ * Fenêtre principale : barre latérale de navigation et cinq pages,
  * « Accueil » (DashboardPage), « Analyse » (ScanPanel), « Protection en
- * temps réel » (OnAccessPanel) et « Historique » (HistoryPanel).
+ * temps réel » (OnAccessPanel), « Historique » (HistoryPanel) et
+ * « Diagnostic » (DiagnosticsPanel).
  *
  * Fermer la fenêtre la masque seulement : l'application continue de tourner
  * dans la zone de notification (voir main.cpp), sauf si les paramètres
@@ -28,7 +32,7 @@ class MainWindow : public QMainWindow
 
 public:
     MainWindow(ClamdWatcher *watcher, ScanManager *scans, OnAccessController *onAccess, ScanHistory *history,
-               QWidget *parent = nullptr);
+               SystemDiagnostics *diagnostics, PrivilegedHelper *helper, QWidget *parent = nullptr);
 
     void showAndActivate();
     // Clic sur l'icône de notification : masque la fenêtre si elle est visible, l'affiche sinon.
@@ -39,12 +43,17 @@ public:
     void startQuickScan();
     // Affiche la fenêtre sur la page « Protection en temps réel ».
     void showOnAccess();
+    // Affiche la fenêtre sur la page « Diagnostic ».
+    void showDiagnostics();
 
 signals:
     // Fenêtre affichée ou ramenée au premier plan : l'utilisateur voit les résultats.
     void windowActivated();
     // Les paramètres ont été modifiés et enregistrés (dialogue « Paramètres »).
     void settingsChanged();
+    // Une correction du diagnostic a modifié le système (configuration de
+    // clamd, services) : états à relire.
+    void systemChanged();
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -52,7 +61,7 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 
 private:
-    enum Page { HomePage, ScanPage, OnAccessPage, HistoryPage };
+    enum Page { HomePage, ScanPage, OnAccessPage, HistoryPage, DiagnosticsPage };
 
     QWidget *createSidebar();
     void showPage(Page page);
@@ -63,10 +72,12 @@ private:
     ClamdWatcher *m_watcher;
     ScanManager *m_scans;
     OnAccessController *m_onAccess;
+    SystemDiagnostics *m_diagnostics;
     DashboardPage *m_dashboard;
     ScanPanel *m_scanPanel;
     OnAccessPanel *m_onAccessPanel;
     HistoryPanel *m_historyPanel;
+    DiagnosticsPanel *m_diagnosticsPanel;
     QListWidget *m_navigation;
     QStackedWidget *m_pages;
     int m_realtimeThreats = 0; // détections en temps réel depuis le lancement, non effacées

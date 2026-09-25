@@ -1,5 +1,6 @@
 #include "core/ClamdConfig.h"
 
+#include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
 #include <QTest>
@@ -124,6 +125,15 @@ void TestClamdConfig::findsConfigOfSocket()
     // Socket d'aucun fichier (choisi dans les paramètres) : le premier lisible.
     config = ClamdConfig::forSocket(QStringLiteral("/tmp/autre.sock"), files);
     QCOMPARE(config.path, fedora);
+
+    // Socket désigné par un autre chemin (lien symbolique, comme /var/run -> /run).
+    QVERIFY(QDir().mkpath(dir.filePath(QStringLiteral("run/clamav"))));
+    QVERIFY(QFile::link(dir.filePath(QStringLiteral("run")), dir.filePath(QStringLiteral("var-run"))));
+    writeFile(dir.filePath(QStringLiteral("run/clamav/clamd.ctl")), "");
+    const QString linked = dir.filePath(QStringLiteral("linked.conf"));
+    writeFile(linked, "LocalSocket " + QFile::encodeName(dir.filePath(QStringLiteral("var-run/clamav/clamd.ctl"))) + '\n');
+    config = ClamdConfig::forSocket(dir.filePath(QStringLiteral("run/clamav/clamd.ctl")), {fedora, linked});
+    QCOMPARE(config.path, linked);
 
     // Aucun fichier lisible : valeurs par défaut.
     config = ClamdConfig::forSocket(QStringLiteral("/run/clamav/clamd.ctl"), {missing});

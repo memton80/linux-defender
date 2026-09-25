@@ -2,10 +2,21 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QRegularExpression>
 
 namespace
 {
+// Même fichier ? « /var/run/clamav/clamd.ctl » (configuration de Debian) et
+// « /run/clamav/clamd.ctl » le sont : /var/run est un lien vers /run.
+bool samePath(const QString &a, const QString &b)
+{
+    if (QDir::cleanPath(a) == QDir::cleanPath(b))
+        return true;
+    const QString canonical = QFileInfo(a).canonicalFilePath();
+    return !canonical.isEmpty() && canonical == QFileInfo(b).canonicalFilePath();
+}
+
 bool boolValue(const QString &value)
 {
     const QString lower = value.toLower();
@@ -73,7 +84,7 @@ ClamdConfig ClamdConfig::forSocket(const QString &socketPath, const QStringList 
         const ClamdConfig config = read(file);
         if (config.path.isEmpty())
             continue;
-        if (!socketPath.isEmpty() && QDir::cleanPath(config.localSocket) == QDir::cleanPath(socketPath))
+        if (!socketPath.isEmpty() && !config.localSocket.isEmpty() && samePath(config.localSocket, socketPath))
             return config;
         if (first.path.isEmpty())
             first = config;

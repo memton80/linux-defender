@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "DashboardPage.h"
+#include "DiagnosticsPanel.h"
 #include "HistoryPanel.h"
 #include "OnAccessPanel.h"
 #include "ScanPanel.h"
@@ -11,6 +12,7 @@
 #include "core/Settings.h"
 #include "core/ThreatText.h"
 #include "system/OnAccessController.h"
+#include "system/SystemDiagnostics.h"
 
 #include <QApplication>
 #include <QCloseEvent>
@@ -25,15 +27,17 @@
 #include <QVBoxLayout>
 
 MainWindow::MainWindow(ClamdWatcher *watcher, ScanManager *scans, OnAccessController *onAccess, ScanHistory *history,
-                       QWidget *parent)
+                       SystemDiagnostics *diagnostics, PrivilegedHelper *helper, QWidget *parent)
     : QMainWindow(parent)
     , m_watcher(watcher)
     , m_scans(scans)
     , m_onAccess(onAccess)
-    , m_dashboard(new DashboardPage(watcher, scans, onAccess, history))
+    , m_diagnostics(diagnostics)
+    , m_dashboard(new DashboardPage(watcher, scans, onAccess, history, diagnostics))
     , m_scanPanel(new ScanPanel(scans, history))
-    , m_onAccessPanel(new OnAccessPanel(onAccess))
+    , m_onAccessPanel(new OnAccessPanel(onAccess, helper))
     , m_historyPanel(new HistoryPanel(history))
+    , m_diagnosticsPanel(new DiagnosticsPanel(diagnostics, helper))
     , m_pages(new QStackedWidget)
 {
     // Pages, dans l'ordre de l'énumération Page (et de la barre latérale).
@@ -41,6 +45,7 @@ MainWindow::MainWindow(ClamdWatcher *watcher, ScanManager *scans, OnAccessContro
     m_pages->addWidget(m_scanPanel);
     m_pages->addWidget(m_onAccessPanel);
     m_pages->addWidget(m_historyPanel);
+    m_pages->addWidget(m_diagnosticsPanel);
 
     // Barre latérale | séparateur | page courante.
     auto *separator = new QFrame;
@@ -67,7 +72,10 @@ MainWindow::MainWindow(ClamdWatcher *watcher, ScanManager *scans, OnAccessContro
         m_historyPanel->selectLatest();
         showPage(HistoryPage);
     });
+    connect(m_dashboard, &DashboardPage::showDiagnosticsRequested, this, [this] { showPage(DiagnosticsPage); });
     connect(m_dashboard, &DashboardPage::settingsRequested, this, &MainWindow::openSettings);
+    connect(m_diagnosticsPanel, &DiagnosticsPanel::fixApplied, this, &MainWindow::systemChanged);
+    connect(m_diagnostics, &SystemDiagnostics::changed, this, &MainWindow::updateNavigationIcons);
     connect(m_dashboard, &DashboardPage::levelChanged, this, &MainWindow::updateNavigationIcons);
 
     // Analyse lancée depuis la fenêtre ou l'icône : sa progression est sur la
@@ -128,7 +136,8 @@ QWidget *MainWindow::createSidebar()
     const int iconSize = style()->pixelMetric(QStyle::PM_ToolBarIconSize, nullptr, this);
     m_navigation->setIconSize(QSize(iconSize, iconSize));
     const int rowHeight = qMax(iconSize, fontMetrics().height()) + fontMetrics().height();
-    for (const QString &text : {tr("Accueil"), tr("Analyse"), tr("Protection en temps réel"), tr("Historique")}) {
+    for (const QString &text :
+         {tr("Accueil"), tr("Analyse"), tr("Protection en temps réel"), tr("Historique"), tr("Diagnostic")}) {
         auto *item = new QListWidgetItem(text, m_navigation);
         item->setSizeHint(QSize(0, rowHeight));
     }
@@ -193,6 +202,17 @@ void MainWindow::updateNavigationIcons()
     m_navigation->item(HistoryPage)->setIcon(QIcon::fromTheme(
         QStringLiteral("view-history"), QIcon::fromTheme(QStringLiteral("document-open-recent"),
                                                          StatusDisplay::levelIcon(StatusDisplay::Level::Neutral))));
+
+    // Diagnostic : icône neutre tant qu'il n'y a pas de problème à corriger.
+    const DiagnosticItem::Level diagnostic = m_diagnostics->worstLevel();
+    m_navigation->item(DiagnosticsPage)->setIcon(
+        diagnostic >= DiagnosticItem::Level::Warning
+            ? StatusDisplay::diagnosticIcon(diagnostic)
+            : QIcon::fromTheme(QStringLiteral("tools-report-bug"),
+                               QIcon::fromTheme(QStringLiteral("dialog-information"),
+                                                StatusDisplay::levelIcon(StatusDisplay::Level::Neutral))));
+    const std::optional<DiagnosticItem> problem = m_diagnostics->mostSevere();
+    m_navigation->item(DiagnosticsPage)->setToolTip(problem ? problem->title : tr("Aucun problème détecté"));
 }
 
 void MainWindow::showAndActivate()
@@ -227,6 +247,12 @@ void MainWindow::startQuickScan()
 void MainWindow::showOnAccess()
 {
     showPage(OnAccessPage);
+    showAndActivate();
+}
+
+void MainWindow::showDiagnostics()
+{
+    showPage(DiagnosticsPage);
     showAndActivate();
 }
 

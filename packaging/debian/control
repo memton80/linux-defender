@@ -18,6 +18,7 @@ Depends: ${shlibs:Depends},
          qt6-qpa-plugins,
 Recommends: clamav-daemon,
             udisks2,
+            pkexec,
 Description: lightweight Qt interface for the ClamAV antivirus
  Linux Defender is a native Qt 6 (QtWidgets) front-end for the ClamAV daemon
  (clamd), designed for KDE Plasma and its Breeze theme.
@@ -27,7 +28,10 @@ Description: lightweight Qt interface for the ClamAV antivirus
   - quick, full and custom scans, with progress, filters and exclusions;
   - automatic scan of USB keys and memory cards when they are mounted;
   - scan history;
-  - real-time protection (clamonacc), enabled at installation;
+  - real-time protection (clamonacc), enabled at installation, with an
+    on/off switch;
+  - diagnostics of the installation (clamd service and socket, signatures,
+    SELinux, scan limits), with one-click fixes (pkexec and polkit);
   - system tray icon showing the clamd status, with desktop notifications.
  .
  Files are opened by the application and passed to clamd (FILDES), so clamd

@@ -31,6 +31,8 @@ Requires:       hicolor-icon-theme
 Recommends:     clamd
 Recommends:     clamav-update
 Recommends:     udisks2
+# pkexec : corrections du diagnostic et case de la protection en temps réel.
+Recommends:     polkit
 
 %description
 Linux Defender is a native Qt 6 (QtWidgets) front-end for the ClamAV daemon
@@ -139,6 +141,8 @@ fi
 %dir %{_sysconfdir}/linux-defender
 %config(noreplace) %{_sysconfdir}/linux-defender/clamonacc.conf
 %config(noreplace) %{_sysconfdir}/logrotate.d/linux-defender
+%{_libexecdir}/linux-defender-helper
+%{_datadir}/polkit-1/actions/io.github.memton80.linux-defender.policy
 
 %changelog
 * Thu Sep 24 2026 memton80 <memton80@users.noreply.github.com> - 1.0.2-1

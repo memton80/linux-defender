@@ -9,9 +9,9 @@ par son socket Unix, avec le protocole natif de clamd.
 
 Fonctions : tableau de bord de l'état de la protection, analyses rapide, complète ou à la demande
 de fichiers et de dossiers (avec exclusions), analyse automatique des clés USB au montage,
-historique des analyses, supervision de la protection en temps réel, icône dans la zone de
-notification avec l'état de clamd et des notifications, démarrage automatique à l'ouverture de
-session.
+historique des analyses, supervision de la protection en temps réel, diagnostic de
+l'installation avec corrections en un clic, icône dans la zone de notification avec l'état de
+clamd et des notifications, démarrage automatique à l'ouverture de session.
 
 ## Installation
 
@@ -68,6 +68,10 @@ Chaque push sur `main` produit aussi les trois fichiers, avec la version du fich
 (connexion à GitHub nécessaire).
 
 ## Configurer clamd
+
+La page **Diagnostic** de l'application détecte chacun des points ci-dessous, donne la commande
+exacte et, avec les paquets `.deb` et `.rpm`, applique la correction en un clic (voir
+[Diagnostic](#diagnostic)). Les commandes restent utiles sans l'interface.
 
 ### Fedora
 
@@ -136,7 +140,7 @@ Depuis une compilation des sources, le binaire est `build/bin/linux-defender`. A
 
 ### Fenêtre
 
-La fenêtre a une barre latérale avec quatre pages ; l'icône de chaque page reflète son état
+La fenêtre a une barre latérale avec cinq pages ; l'icône de chaque page reflète son état
 (bouclier vert, orange ou rouge, analyse en cours...) :
 
 - **Accueil** : un bandeau résume l'état de la protection et propose l'action la plus utile
@@ -147,6 +151,8 @@ La fenêtre a une barre latérale avec quatre pages ; l'icône de chaque page re
   des fichiers analysés avec filtres (menaces, erreurs, sains), recherche et export CSV.
 - **Protection en temps réel** : état de `clamonacc`, dossiers surveillés et détections.
 - **Historique** : les analyses passées et, pour chacune, son bilan et ses menaces.
+- **Diagnostic** : la configuration de clamd et de la protection, vérifiée point par point, avec
+  les corrections (voir [Diagnostic](#diagnostic)).
 
 Clic droit sur un fichier d'une liste : « Afficher dans le gestionnaire de fichiers » (Dolphin
 s'ouvre sur le dossier, fichier sélectionné), « Copier le chemin », « Copier le nom de la menace ».
@@ -207,9 +213,9 @@ sain. Comportements vérifiés avec ClamAV 1.5.4 :
 
 | Cas | Réponse de clamd | Affiché par Linux Defender |
 |---|---|---|
-| fichier plus gros que `MaxFileSize` (100 Mo par défaut ; la limite elle-même est encore analysée) | « OK », fichier non lu | **Non analysé** : l'application lit `MaxFileSize` dans la configuration de clamd et compare la taille |
+| fichier plus gros que `MaxFileSize` (100 Mo par défaut, **25 Mo dans la configuration installée par Debian et Ubuntu** ; la limite elle-même est encore analysée) | « OK », fichier non lu | **Non analysé** : l'application lit `MaxFileSize` dans la configuration de clamd et compare la taille |
 | fichier de plus de 2 147 483 645 octets (2 Go), même avec `MaxFileSize 0` | « OK », fichier non lu | **Non analysé** |
-| archive dont le contenu décompressé dépasse `MaxScanSize` (400 Mo par défaut) | « OK » : seul le début est analysé | Sain — sauf avec `AlertExceedsMax yes` : **Non analysé** (`Heuristics.Limits.Exceeded.MaxScanSize`) |
+| archive dont le contenu décompressé dépasse `MaxScanSize` (400 Mo par défaut, 100 Mo sous Debian et Ubuntu) | « OK » : seul le début est analysé | Sain — sauf avec `AlertExceedsMax yes` : **Non analysé** (`Heuristics.Limits.Exceeded.MaxScanSize`) |
 | fichier d'une archive plus gros que `MaxFileSize` | « OK » : il est tronqué et seul son début est analysé, même avec `AlertExceedsMax yes` | Sain |
 
 La configuration lue est celle du clamd utilisé : le fichier (`/etc/clamd.d/scan.conf`,
@@ -217,6 +223,45 @@ La configuration lue est celle du clamd utilisé : le fichier (`/etc/clamd.d/sca
 l'application, sinon le premier lisible, sinon les valeurs par défaut. La page « Analyse » des
 paramètres affiche la limite trouvée. Pour que les archives analysées en partie soient aussi
 signalées, ajoutez `AlertExceedsMax yes` à cette configuration, puis redémarrez clamd.
+
+### Diagnostic
+
+La page **Diagnostic** vérifie l'installation et, pour chaque problème, explique la cause, affiche
+la commande exacte (bouton « Copier ») et propose une correction en un clic :
+
+| Vérification | Problème détecté | Correction en un clic |
+|---|---|---|
+| clamd | service arrêté ou en échec | démarre et active le service (`clamd@scan`, `clamav-daemon` ou `clamd`) |
+| | Fedora : ligne `Example` active, `LocalSocket` commenté | commente `Example`, active `LocalSocket`, démarre clamd |
+| | clamd absent | — (commande d'installation de la distribution) |
+| Accès au socket | « Permission refusée » | ajoute l'utilisateur au groupe du socket (`clamav`, `virusgroup` ou `clamscan`) |
+| | déjà dans le groupe, mais session ouverte avant | — (fermer la session et la rouvrir) |
+| Signatures | obsolètes, ou aucune base chargée | active `clamav-freshclam` ; sinon, son journal ou la commande d'installation |
+| SELinux | booléen `antivirus_can_scan_system` désactivé | `setsebool -P antivirus_can_scan_system 1` |
+| Limites d'analyse | `AlertExceedsMax` absent (archives analysées en partie sans avertissement) | `AlertExceedsMax yes`, puis redémarre clamd |
+| Temps réel | protection désactivée | l'active et la démarre |
+| | limite inotify basse (moins de 131 072 dossiers) ou atteinte | la porte à 524 288 (`/etc/sysctl.d/90-linux-defender.conf`) |
+
+Le diagnostic se met à jour tout seul (état de clamd, services systemd) ; « Vérifier à nouveau »
+le relance. Un problème qu'il est seul à voir (SELinux, par exemple) s'affiche aussi dans le
+bandeau de l'accueil, dont le bouton « Résoudre » mène à cette page.
+
+Les corrections passent par un petit programme d'aide, `/usr/libexec/linux-defender-helper`
+(paquets `.deb` et `.rpm` seulement), lancé par `pkexec` sous une action polkit dédiée
+(`io.github.memton80.linux-defender.manage`) :
+
+- l'agent polkit du bureau demande le **mot de passe administrateur**, retenu quelques minutes
+  (plusieurs corrections à la suite n'en demandent qu'un) ; rien n'est possible depuis une
+  session distante ou inactive ;
+- l'application ne tourne jamais en root. Elle ne transmet au programme d'aide qu'un nom d'action
+  de sa liste fermée : le programme d'aide trouve lui-même les fichiers et services concernés, et
+  le groupe du socket est vérifié contre une liste fixe. L'utilisateur ajouté à un groupe est
+  toujours celui qui a lancé `pkexec` ;
+- avant de modifier la configuration de clamd, il en garde une copie
+  (`<fichier>.linux-defender-orig`), une seule fois.
+
+Sans programme d'aide (archive `.tar.gz`) ou sans `pkexec`, la page affiche seulement les
+commandes à lancer dans un terminal.
 
 ### Clés USB
 
@@ -273,8 +318,8 @@ Le socket utilisé est, dans l'ordre :
 > Depuis la version 1.0.2, les paquets `.deb` et `.rpm` installent le service
 > `linux-defender-onaccess.service` **activé et démarré** : la protection en temps réel
 > fonctionne dès l'installation (voir [Activer ou désactiver la
-> protection](#activer-ou-désactiver-la-protection)). Une case dans les Paramètres arrivera dans
-> une prochaine version.
+> protection](#activer-ou-désactiver-la-protection)). La case « Activer la protection en temps
+> réel » de la page **Protection en temps réel** l'active ou la désactive.
 
 `clamonacc` est le programme de ClamAV qui surveille les fichiers en temps réel : le noyau
 (fanotify et inotify) lui signale chaque fichier ouvert, créé, écrit ou renommé dans les dossiers
@@ -321,8 +366,14 @@ Les paquets activent le service (démarrage à chaque démarrage de la machine) 
 - à la première installation ;
 - lors d'une mise à jour depuis une version antérieure à 1.0.2, où il était installé désactivé.
 
-Ensuite, votre choix est respecté : un service désactivé le reste lors des mises à jour. Pour le
-désactiver, puis le réactiver :
+Ensuite, votre choix est respecté : un service désactivé le reste lors des mises à jour.
+
+La case **Activer la protection en temps réel** de la page **Protection en temps réel** l'active
+(démarrage immédiat et à chaque démarrage de la machine) ou la désactive, après le mot de passe
+administrateur (voir [Diagnostic](#diagnostic) pour le programme d'aide). Activer celle de Linux
+Defender désactive aussi le `clamav-clamonacc.service` de Debian et Ubuntu, qui ne doit pas tourner
+en même temps. Sans programme d'aide (archive `.tar.gz`), la case est grisée. En ligne de commande,
+pour la désactiver, puis la réactiver :
 
 ```sh
 sudo systemctl disable --now linux-defender-onaccess.service
@@ -356,6 +407,8 @@ Fichiers installés par les paquets (pas par l'archive `.tar.gz`) :
 | `/usr/lib/systemd/system-preset/80-linux-defender.preset` | Fedora : active le service à l'installation |
 | `/etc/linux-defender/clamonacc.conf` | configuration de `clamonacc` : socket de clamd, dossiers surveillés (`/home` par défaut), analyse à l'écriture |
 | `/etc/logrotate.d/linux-defender` | rotation mensuelle du journal |
+| `/usr/libexec/linux-defender-helper` | programme d'aide des corrections, lancé par `pkexec` (voir [Diagnostic](#diagnostic)) |
+| `/usr/share/polkit-1/actions/io.github.memton80.linux-defender.policy` | action polkit du programme d'aide |
 
 `clamd.conf` n'est pas modifié : `clamonacc` lit sa propre configuration. Après avoir modifié
 `/etc/linux-defender/clamonacc.conf` (conservé lors des mises à jour), redémarrez le service :
@@ -391,7 +444,9 @@ Si `clamonacc` est absent, la page affiche la commande adaptée à la distributi
 - Comme pour les scans manuels, `clamonacc` transmet les fichiers ouverts à clamd (`--fdpass`) :
   clamd n'a pas besoin de pouvoir les lire lui-même.
 - **L'application, elle, ne demande aucun privilège** pour tout cela : elle lit l'état du service
-  auprès de systemd (lecture seule) et le journal de `clamonacc`.
+  auprès de systemd (lecture seule) et le journal de `clamonacc`. Seules l'activation et la
+  désactivation (case de la page) passent par le programme d'aide et `pkexec`, avec le mot de
+  passe administrateur.
 
 ### Journal
 
@@ -577,6 +632,8 @@ linux-defender/
 │   ├── system/               # intégration au système, sans UI
 │   │   ├── UsbMonitor.*      # montage des clés USB (UDisks2 via D-Bus)
 │   │   ├── SingleInstance.*  # une seule instance à la fois
+│   │   ├── PrivilegedHelper.*   # corrections en root : programme d'aide lancé par pkexec
+│   │   ├── SystemDiagnostics.*  # diagnostic de l'installation (évaluation pure + relevé du système)
 │   │   ├── Autostart.*       # démarrage automatique (~/.config/autostart)
 │   │   ├── DesktopNotifier.* # notifications du bureau (org.freedesktop.Notifications)
 │   │   ├── OnAccessController.* # supervision de la protection en temps réel (clamonacc)
@@ -587,6 +644,7 @@ linux-defender/
 │       ├── ScanPanel.*       # page « Analyse » : progression, bilan, résultats filtrés
 │       ├── OnAccessPanel.*   # page « Protection en temps réel » : état, détections
 │       ├── HistoryPanel.*    # page « Historique » : analyses passées et leurs menaces
+│       ├── DiagnosticsPanel.*# page « Diagnostic » : vérifications, commandes, corrections
 │       ├── HistoryModel.*    # liste des analyses de l'historique
 │       ├── OnAccessModel.*   # liste des détections en temps réel
 │       ├── ScanResultsModel.*# liste des fichiers analysés, et son filtre
@@ -599,7 +657,8 @@ linux-defender/
 │   ├── icons/*.svg           # icônes SVG (placeholders à remplacer)
 │   ├── linux-defender.desktop
 │   ├── linux-defender.1.in   # page de manuel (man linux-defender), version ajoutée par CMake
-│   └── onaccess/             # service systemd, configuration de clamonacc, rotation du journal
+│   ├── onaccess/             # service systemd, configuration de clamonacc, rotation du journal
+│   └── helper/               # programme d'aide (script shell) et son action polkit
 ├── packaging/
 │   ├── version.sh            # version : fichier VERSION (vérifiée contre le tag git)
 │   ├── build-deb.sh, build-rpm.sh, build-tarball.sh
@@ -618,9 +677,9 @@ linux-defender/
 - [x] Étape 3 : scan à la demande (FILDES), scan automatique des clés USB (UDisks2), instance
       unique, démarrage automatique, paramètres
 - [x] Étape 4 : CI GitHub Actions, paquets `.deb` et `.rpm`, archive `.tar.gz`, releases
-- [ ] Étape 5 : protection en temps réel (`clamonacc`) — supervision, détections, alertes et
+- [x] Étape 5 : protection en temps réel (`clamonacc`) — supervision, détections, alertes et
       service systemd faits dans la **version 1.0.0**, service activé à l'installation depuis la
-      **version 1.0.2** ; case dans les « Paramètres » à venir
+      **version 1.0.2** ; case d'activation dans la page, avec le diagnostic
 - [x] Interface : tableau de bord, historique des analyses, analyse rapide et complète,
       exclusions, paramètres en pages
 - [ ] Plus tard : quarantaine, planification, scans en parallèle, son des alertes

@@ -4,7 +4,9 @@
 #include "core/ScanManager.h"
 #include "core/Settings.h"
 #include "system/OnAccessController.h"
+#include "system/PrivilegedHelper.h"
 #include "system/SingleInstance.h"
+#include "system/SystemDiagnostics.h"
 #include "system/UsbMonitor.h"
 #include "ui/MainWindow.h"
 #include "ui/TrayIcon.h"
@@ -13,6 +15,7 @@
 #include <QCommandLineParser>
 #include <QIcon>
 #include <QLibraryInfo>
+#include <QTimer>
 #include <QTranslator>
 
 int main(int argc, char *argv[])
@@ -70,7 +73,9 @@ int main(int argc, char *argv[])
 
     UsbMonitor usb;
     OnAccessController onAccess;
-    MainWindow window(&watcher, &scans, &onAccess, &history);
+    PrivilegedHelper helper;
+    SystemDiagnostics diagnostics(&watcher, &onAccess);
+    MainWindow window(&watcher, &scans, &onAccess, &history, &diagnostics, &helper);
     TrayIcon tray(&watcher, &scans, &onAccess);
 
     QObject::connect(&instance, &SingleInstance::messageReceived, &window, [&window](const QByteArray &message) {
@@ -96,6 +101,17 @@ int main(int argc, char *argv[])
         applySettings();
         watcher.checkNow();
     });
+    // Correction du diagnostic : socket de clamd à détecter de nouveau (sa
+    // configuration a pu changer), services à relire. clamd met quelques
+    // secondes à redémarrer (chargement des signatures) : nouvelles
+    // vérifications un peu plus tard.
+    QObject::connect(&window, &MainWindow::systemChanged, &watcher, [&applySettings, &watcher, &onAccess] {
+        applySettings();
+        watcher.checkNow();
+        onAccess.refresh();
+        for (const int delay : {5000, 20000, 60000})
+            QTimer::singleShot(delay, &watcher, &ClamdWatcher::checkNow);
+    });
     QObject::connect(&usb, &UsbMonitor::removableMounted, &scans, [&scans](const QString &mountPoint) {
         if (Settings::usbAutoScan())
             scans.scan({mountPoint}, ScanManager::Origin::Usb);
@@ -117,5 +133,6 @@ int main(int argc, char *argv[])
     // Protection en temps réel : état du service clamonacc, puis suivi de son journal.
     onAccess.refresh();
     onAccess.startMonitoring();
+    diagnostics.refresh();
     return app.exec();
 }
