@@ -35,6 +35,8 @@ bool signaturesOutdated(const ClamdVersion &version, int maxAgeDays);
 QIcon scanningIcon();
 QIcon threatIcon();
 QIcon resultIcon(ScanResult::Status status);
+// Fichier mis en quarantaine (menace neutralisée).
+QIcon quarantineIcon();
 QString resultText(ScanResult::Status status);
 // « 1 234 fichiers analysés, 2 menaces détectées, 1 erreur. »
 QString summaryText(const ScanSummary &summary);

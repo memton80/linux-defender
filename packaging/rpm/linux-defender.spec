@@ -38,7 +38,7 @@ Recommends:     polkit
 Linux Defender is a native Qt 6 (QtWidgets) front-end for the ClamAV daemon
 (clamd), designed for KDE Plasma and its Breeze theme: dashboard, quick, full
 and custom scans, automatic scan of USB keys when they are mounted, scan
-history, real-time protection (clamonacc, enabled at installation), system tray
+history, quarantine, real-time protection (clamonacc, enabled at installation), system tray
 icon showing the clamd status, with desktop notifications.
 
 Files are opened by the application and passed to clamd (FILDES), so clamd can
@@ -48,7 +48,7 @@ scan the home directory and removable media without reading them itself.
 Linux Defender est une interface Qt 6 (QtWidgets) native pour le démon de
 ClamAV (clamd), pensée pour KDE Plasma et son thème Breeze : tableau de bord,
 analyses rapide, complète ou personnalisée, analyse automatique des clés USB au
-montage, historique des analyses, protection en temps réel (clamonacc, activée
+montage, historique des analyses, quarantaine, protection en temps réel (clamonacc, activée
 à l'installation), icône dans la zone de notification avec l'état de clamd et
 des notifications.
 

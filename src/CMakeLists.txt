@@ -7,6 +7,8 @@ add_library(defender_core STATIC
     core/ClamdConfig.cpp
     core/ClamdWatcher.h
     core/ClamdWatcher.cpp
+    core/Quarantine.h
+    core/Quarantine.cpp
     core/ScanHistory.h
     core/ScanHistory.cpp
     core/ScanJob.h
@@ -77,6 +79,8 @@ qt_add_executable(linux-defender
     ui/OnAccessModel.cpp
     ui/OnAccessPanel.h
     ui/OnAccessPanel.cpp
+    ui/QuarantinePanel.h
+    ui/QuarantinePanel.cpp
     ui/ScanPanel.h
     ui/ScanPanel.cpp
     ui/ScanResultsModel.h

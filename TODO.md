@@ -60,12 +60,12 @@ analysé, ni comme « menace » ce qui n'est qu'un soupçon.
 
 ## 5. Quarantaine
 
-- [ ] Mise en quarantaine : fichier retiré de son emplacement, contenu rendu inerte (ni
+- [x] Mise en quarantaine : fichier retiré de son emplacement, contenu rendu inerte (ni
       exécutable, ni détecté de nouveau par la protection en temps réel), empreinte SHA-256
-- [ ] Restauration (sans écraser un fichier existant) et suppression définitive
-- [ ] Page **Quarantaine** ; action dans les résultats, les détections en temps réel,
+- [x] Restauration (sans écraser un fichier existant) et suppression définitive
+- [x] Page **Quarantaine** ; action dans les résultats, les détections en temps réel,
       l'historique et l'alerte d'une détection
-- [ ] Tests
+- [x] Tests
 
 ## Plus tard
 

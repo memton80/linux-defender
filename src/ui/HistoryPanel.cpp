@@ -4,10 +4,12 @@
 #include "HistoryModel.h"
 #include "StatusDisplay.h"
 #include "Widgets.h"
+#include "core/Quarantine.h"
 #include "core/ScanHistory.h"
 #include "core/Settings.h"
 #include "core/ThreatText.h"
 
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -20,9 +22,10 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
-HistoryPanel::HistoryPanel(ScanHistory *history, QWidget *parent)
+HistoryPanel::HistoryPanel(ScanHistory *history, Quarantine *quarantine, QWidget *parent)
     : QWidget(parent)
     , m_history(history)
+    , m_quarantine(quarantine)
     , m_model(new HistoryModel(history, this))
 {
     m_info = new QLabel;
@@ -95,12 +98,22 @@ HistoryPanel::HistoryPanel(ScanHistory *history, QWidget *parent)
     m_threats->header()->resizeSection(1, 36 * charWidth);
     connect(m_threats, &QTreeWidget::customContextMenuRequested, this, [this](const QPoint &position) {
         const QTreeWidgetItem *item = m_threats->itemAt(position);
-        if (item)
-            FileActions::execContextMenu(this, m_threats->viewport()->mapToGlobal(position), item->text(0),
-                                         item->text(1), tr("Copier le nom de la menace"));
+        if (!item)
+            return;
+        const QString path = item->data(0, Qt::UserRole).toString();
+        const QString threat = item->text(1);
+        // Quarantaine : menace ou fichier suspect, toujours à son emplacement.
+        const auto status = ScanResult::Status(item->data(1, Qt::UserRole).toInt());
+        std::function<void()> quarantine;
+        if (status != ScanResult::Status::Unscanned && !m_quarantine->contains(path) && QFileInfo::exists(path))
+            quarantine = [this, path, threat] { m_quarantine->add({{path, threat}}); };
+        FileActions::execContextMenu(this, m_threats->viewport()->mapToGlobal(position), path, threat,
+                                     tr("Copier le nom de la menace"), quarantine);
     });
+    // L'état des fichiers (en place, en quarantaine) change : détails à jour.
+    connect(m_quarantine, &Quarantine::changed, this, &HistoryPanel::showDetails);
     connect(m_threats, &QTreeWidget::itemDoubleClicked, this,
-            [](const QTreeWidgetItem *item) { FileActions::showInFileManager(item->text(0)); });
+            [](const QTreeWidgetItem *item) { FileActions::showInFileManager(item->data(0, Qt::UserRole).toString()); });
 
     m_details = new Card;
     auto *detailsLayout = new QVBoxLayout(m_details);
@@ -169,8 +182,12 @@ void HistoryPanel::showDetails()
     m_threats->clear();
     for (const QList<ScanResult> *results : {&record.threats, &record.warnings}) {
         for (const ScanResult &result : *results) {
-            auto *item = new QTreeWidgetItem({result.path, result.detail});
-            item->setIcon(0, StatusDisplay::resultIcon(result.status));
+            const bool quarantined = m_quarantine->contains(result.path);
+            auto *item = new QTreeWidgetItem(
+                {quarantined ? tr("%1 (en quarantaine)").arg(result.path) : result.path, result.detail});
+            item->setData(0, Qt::UserRole, result.path);
+            item->setData(1, Qt::UserRole, int(result.status));
+            item->setIcon(0, quarantined ? StatusDisplay::quarantineIcon() : StatusDisplay::resultIcon(result.status));
             item->setToolTip(0, StatusDisplay::resultText(result.status) + QLatin1Char('\n') + result.path);
             item->setToolTip(1, ThreatText::describe(result.detail));
             m_threats->addTopLevelItem(item);
@@ -187,7 +204,7 @@ void HistoryPanel::showDetails()
                                               : tr("Fichiers suspects ou non analysés");
     if (truncated)
         title += tr(" (les %1 premiers de chaque catégorie)").arg(ScanSummary::kMaxThreats);
-    m_threatsTitle->setText(title + tr(" : les fichiers n'ont été ni supprimés ni déplacés."));
+    m_threatsTitle->setText(title + tr(" — clic droit : mettre en quarantaine un fichier encore en place."));
 }
 
 void HistoryPanel::updateInfo()

@@ -1,5 +1,6 @@
 #include "core/ClamdClient.h"
 #include "core/ClamdWatcher.h"
+#include "core/Quarantine.h"
 #include "core/ScanHistory.h"
 #include "core/ScanManager.h"
 #include "core/Settings.h"
@@ -115,8 +116,14 @@ int main(int argc, char *argv[])
     OnAccessController onAccess;
     PrivilegedHelper helper;
     SystemDiagnostics diagnostics(&watcher, &onAccess);
-    MainWindow window(&watcher, &scans, &onAccess, &history, &diagnostics, &helper);
-    TrayIcon tray(&watcher, &scans, &onAccess);
+    Quarantine quarantine;
+    // Un fichier lu pour être mis en quarantaine est analysé à ce moment-là
+    // par clamonacc : cette nouvelle détection n'en est pas une.
+    onAccess.setDetectionFilter([&quarantine](const OnAccessDetection &detection) {
+        return quarantine.isRecentlyQuarantined(detection.path);
+    });
+    MainWindow window(&watcher, &scans, &onAccess, &history, &diagnostics, &helper, &quarantine);
+    TrayIcon tray(&watcher, &scans, &onAccess, &quarantine);
 
     const auto handleRequest = [&window](const InstanceRequest &request) {
         // Même mécanisme que pour les notifications : Qt lit ce jeton quand

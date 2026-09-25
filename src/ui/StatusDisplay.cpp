@@ -151,6 +151,11 @@ QIcon resultIcon(ScanResult::Status status)
     return svgIcon(QStringLiteral(":/icons/result-warning.svg"));
 }
 
+QIcon quarantineIcon()
+{
+    return QIcon::fromTheme(QStringLiteral("folder-locked"), svgIcon(QStringLiteral(":/icons/status-ok.svg")));
+}
+
 QString resultText(ScanResult::Status status)
 {
     switch (status) {

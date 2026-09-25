@@ -8,6 +8,7 @@
 
 class Card;
 class PlaceholderStack;
+class Quarantine;
 class QButtonGroup;
 class QLabel;
 class QLineEdit;
@@ -32,7 +33,7 @@ class ScanPanel : public QWidget
     Q_OBJECT
 
 public:
-    ScanPanel(ScanManager *scans, ScanHistory *history, QWidget *parent = nullptr);
+    ScanPanel(ScanManager *scans, ScanHistory *history, Quarantine *quarantine, QWidget *parent = nullptr);
 
     void chooseFiles();
     void chooseFolder();
@@ -63,6 +64,7 @@ private:
 
     ScanManager *m_scans;
     ScanHistory *m_history;
+    Quarantine *m_quarantine;
     ScanResultsModel *m_model;
     ScanResultsFilter *m_filter;
 
@@ -89,6 +91,7 @@ private:
     QList<QToolButton *> m_filterButtons; // tous, menaces, avertissements, erreurs, sains
     QLineEdit *m_search;
     QPushButton *m_exportButton;
+    QPushButton *m_quarantineButton;
     QTreeView *m_view;
     PlaceholderStack *m_viewStack;
     QLabel *m_limitNote;

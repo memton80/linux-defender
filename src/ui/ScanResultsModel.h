@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Quarantine.h"
 #include "core/ScanJob.h"
 
 #include <QAbstractTableModel>
@@ -23,6 +24,7 @@ public:
     enum Role {
         StatusRole = Qt::UserRole, // ScanResult::Status, en entier (filtre)
         SortRole,                  // clé de tri : menaces, avertissements, erreurs, puis fichiers sains
+        QuarantinedRole,           // bool : fichier mis en quarantaine depuis l'analyse
     };
     static constexpr int kMaxCleanRows = 10000;
 
@@ -30,6 +32,10 @@ public:
 
     void clear();
     void append(const QList<ScanResult> &results);
+    // Fichiers en quarantaine : leurs lignes l'indiquent (suit ses changements).
+    void setQuarantine(const Quarantine *quarantine);
+    // Menaces de la liste qui ne sont pas (encore) en quarantaine.
+    QList<Quarantine::Item> threatsToQuarantine() const;
     // Fichiers sains analysés mais non listés (au-delà de kMaxCleanRows).
     qint64 unlistedCleanCount() const;
 
@@ -42,7 +48,9 @@ private:
     QList<ScanResult> m_results;
     // Créées une seule fois : les recréer à chaque affichage de ligne referait le rendu des SVG.
     QIcon m_icons[ScanResult::kStatusCount]; // par statut
+    QIcon m_quarantineIcon;
     QFont m_infectedFont;
+    const Quarantine *m_quarantine = nullptr;
     int m_cleanRows = 0;
     qint64 m_unlistedClean = 0;
 };

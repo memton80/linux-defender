@@ -37,6 +37,13 @@ dans le fichier `VERSION` ; avant la 1.0.2, les paquets construits hors tag port
   locaux, et action **« Analyse rapide »** dans le menu des applications. Options
   `--scan <chemins…>` et `--quick-scan` : l'analyse est transmise à l'instance déjà lancée, avec
   le jeton d'activation Wayland pour que sa fenêtre prenne le focus.
+- **Quarantaine** : clic droit sur une menace (analyse, temps réel, historique), bouton « Mettre
+  les N menaces en quarantaine » après une analyse, ou bouton de l'alerte d'une détection en temps
+  réel. Le fichier est retiré de son emplacement et rendu inerte (contenu brouillé : ni ouvert, ni
+  exécuté, ni détecté de nouveau), avec son empreinte SHA-256, dans
+  `~/.local/share/linux-defender/quarantine`. Nouvelle page **Quarantaine** : restauration (sans
+  jamais écraser un fichier, empreinte vérifiée) et suppression définitive. Le bandeau rouge de
+  l'accueil disparaît quand les menaces ont été traitées.
 - **Analyse rapide renforcée** : en plus des dossiers choisis, les emplacements où un programme
   malveillant s'installe (démarrage automatique, services utilisateur, `~/.local/bin`, scripts du
   shell, `/tmp`, `/var/tmp`, `/dev/shm`) et le **programme de chaque processus en cours**, lu par

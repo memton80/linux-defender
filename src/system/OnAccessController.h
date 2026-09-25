@@ -65,6 +65,10 @@ public:
 
     // Dossiers où chercher clamonacc (par défaut : defaultSearchDirectories()).
     void setSearchDirectories(const QStringList &directories);
+    // Détections à taire : `ignore` renvoie true pour celles qui ne doivent
+    // pas être signalées (fichier que l'application vient de lire pour le
+    // mettre en quarantaine, et que clamonacc analyse à ce moment-là).
+    void setDetectionFilter(const std::function<bool(const OnAccessDetection &detection)> &ignore);
 
     // Relit l'état (asynchrone) ; stateChanged() suit.
     void refresh();
@@ -105,6 +109,7 @@ private:
     QDBusConnection m_bus;
     OnAccessLog m_log;
     QStringList m_searchDirectories = defaultSearchDirectories();
+    std::function<bool(const OnAccessDetection &)> m_ignoreDetection;
     QString m_clamonacc;
     QStringList m_watchedPaths;
     QVariantMap m_unit;            // propriétés systemd du service de Linux Defender

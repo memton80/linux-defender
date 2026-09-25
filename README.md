@@ -9,7 +9,7 @@ par son socket Unix, avec le protocole natif de clamd.
 
 Fonctions : tableau de bord de l'état de la protection, analyses rapide, complète ou à la demande
 de fichiers et de dossiers (avec exclusions), analyse automatique des clés USB au montage,
-historique des analyses, supervision de la protection en temps réel, diagnostic de
+historique des analyses, quarantaine, supervision de la protection en temps réel, diagnostic de
 l'installation avec corrections en un clic, icône dans la zone de notification avec l'état de
 clamd et des notifications, démarrage automatique à l'ouverture de session.
 
@@ -146,7 +146,7 @@ Depuis une compilation des sources, le binaire est `build/bin/linux-defender`. A
 
 ### Fenêtre
 
-La fenêtre a une barre latérale avec cinq pages ; l'icône de chaque page reflète son état
+La fenêtre a une barre latérale avec six pages ; l'icône de chaque page reflète son état
 (bouclier vert, orange ou rouge, analyse en cours...) :
 
 - **Accueil** : un bandeau résume l'état de la protection et propose l'action la plus utile
@@ -156,13 +156,16 @@ La fenêtre a une barre latérale avec cinq pages ; l'icône de chaque page refl
 - **Analyse** : lancement et progression (fichier en cours, compteurs, durée), bilan, et liste
   des fichiers analysés avec filtres (menaces, erreurs, sains), recherche et export CSV.
 - **Protection en temps réel** : état de `clamonacc`, dossiers surveillés et détections.
+- **Quarantaine** : les fichiers mis en quarantaine, à restaurer ou à supprimer définitivement
+  (voir [Quarantaine](#quarantaine)).
 - **Historique** : les analyses passées et, pour chacune, son bilan et ses menaces.
 - **Diagnostic** : la configuration de clamd et de la protection, vérifiée point par point, avec
   les corrections (voir [Diagnostic](#diagnostic)).
 
-Clic droit sur un fichier d'une liste : « Afficher dans le gestionnaire de fichiers » (Dolphin
-s'ouvre sur le dossier, fichier sélectionné), « Copier le chemin », « Copier le nom de la menace ».
-Double-clic : même chose que « Afficher dans le gestionnaire de fichiers ».
+Clic droit sur un fichier d'une liste : « Mettre en quarantaine » (menace ou fichier suspect
+encore en place), « Afficher dans le gestionnaire de fichiers » (Dolphin s'ouvre sur le dossier,
+fichier sélectionné), « Copier le chemin », « Copier le nom de la menace ». Double-clic : même
+chose que « Afficher dans le gestionnaire de fichiers ».
 
 Aucune feuille de style : les couleurs viennent du thème (Breeze clair ou sombre) et suivent
 ses changements.
@@ -291,6 +294,37 @@ l'application, sinon le premier lisible, sinon les valeurs par défaut. La page 
 paramètres affiche la limite trouvée. Pour que les archives analysées en partie soient aussi
 signalées, ajoutez `AlertExceedsMax yes` à cette configuration, puis redémarrez clamd.
 
+### Quarantaine
+
+Un fichier détecté reste à sa place tant que vous ne décidez rien. Pour le neutraliser :
+
+- clic droit sur la menace (page « Analyse », « Protection en temps réel » ou détail d'une analyse
+  de l'historique) → **Mettre en quarantaine** ;
+- page « Analyse », après une analyse : bouton **Mettre les N menaces en quarantaine** (fichiers
+  infectés ; les fichiers seulement suspects, souvent légitimes, se traitent un par un) ;
+- alerte d'une détection en temps réel : bouton **Mettre en quarantaine**.
+
+Le fichier est alors retiré de son emplacement et gardé dans
+`~/.local/share/linux-defender/quarantine` (dossier 0700, fichiers 0600), **rendu inerte** : son
+contenu est brouillé, il ne peut être ni ouvert ni exécuté, et ni clamd ni la protection en temps
+réel ne le détectent de nouveau (vérifié avec ClamAV 1.5.4). Sont gardés avec lui : son
+emplacement d'origine, le nom de la menace, la date, sa taille, ses droits et son empreinte
+SHA-256 (clic droit → « Copier l'empreinte SHA-256 », pour le chercher sur VirusTotal ou
+MalwareBazaar sans l'envoyer).
+
+La page **Quarantaine** liste ces fichiers :
+
+- **Restaurer…** (après un avertissement) : le fichier revient à son emplacement, avec ses droits
+  (sans setuid ni setgid), après vérification de son empreinte. Un fichier présent entre-temps
+  n'est jamais écrasé : le fichier restauré prend alors le nom `nom (restauré).ext` ;
+- **Supprimer définitivement…** et **Tout supprimer…** (après confirmation).
+
+Limites : l'application agit avec vos droits, sans privilège. Un fichier qui ne vous appartient
+pas, ou sur un support en lecture seule, ne peut pas être retiré : un message l'explique et rien
+n'est modifié. Un lien symbolique n'est jamais suivi. Si le fichier change pendant la mise en
+quarantaine, rien n'est fait. La détection que `clamonacc` produit en lisant le fichier à ce
+moment-là n'est pas signalée.
+
 ### Diagnostic
 
 La page **Diagnostic** vérifie l'installation et, pour chaque problème, explique la cause, affiche
@@ -401,8 +435,8 @@ prévenir de chaque détection :
 - page **Protection en temps réel** de la fenêtre : état du service et liste des détections
   (distincte des résultats des scans manuels).
 
-Les fichiers détectés ne sont **ni supprimés ni déplacés** : l'application indique seulement leur
-emplacement.
+Les fichiers détectés restent en place : l'alerte et la page proposent de les mettre en
+[quarantaine](#quarantaine).
 
 ### Alertes
 
@@ -413,8 +447,9 @@ Une détection affiche une notification du bureau (Plasma, GNOME...) :
   (`~/Téléchargements`). Le nom exact donné par ClamAV est dans la fenêtre ;
 - alerte **critique** : elle reste affichée jusqu'à ce que vous la fermiez, même en mode « Ne pas
   déranger », et disparaît d'elle-même quand vous ouvrez la fenêtre ;
-- boutons **Afficher les détails** (page **Protection en temps réel**) et **Ouvrir le dossier**
-  (gestionnaire de fichiers, fichier sélectionné). Attention : Dolphin peut générer un aperçu
+- boutons **Afficher les détails** (page **Protection en temps réel**), **Mettre en
+  quarantaine** et **Ouvrir le dossier** (gestionnaire de fichiers, fichier sélectionné). Le
+  résultat de la mise en quarantaine remplace l'alerte. Attention : Dolphin peut générer un aperçu
   des images, PDF ou vidéos du dossier, et donc ouvrir le fichier détecté ;
 - plusieurs détections avant que vous ne l'ayez consultée (une archive décompressée, par
   exemple) : une seule alerte, mise à jour (« 5 menaces détectées »), plutôt qu'une par fichier ;
@@ -536,7 +571,8 @@ pendant la copie peuvent manquer à l'archive.
 ### Limitations connues
 
 - **Détection seulement** : l'accès aux fichiers n'est pas bloqué (`OnAccessPrevention no`), et
-  les fichiers infectés restent en place.
+  les fichiers infectés restent en place tant que vous ne les mettez pas en
+  [quarantaine](#quarantaine).
 - **Nombre de dossiers** : `clamonacc` pose une surveillance inotify sur chaque dossier sous les
   dossiers surveillés. Si leur nombre dépasse la limite du noyau au démarrage, `clamonacc` écrit
   `could not watch path '/home', No space left on device` et s'arrête ; la page le signale et
@@ -694,6 +730,7 @@ linux-defender/
 │   │   ├── ClamdConfig.*     # configuration de clamd : socket, limites de taille
 │   │   ├── ClamdWatcher.*    # vérification périodique de l'état de clamd
 │   │   ├── ScanHistory.*     # historique des analyses (JSON)
+│   │   ├── Quarantine.*      # quarantaine : fichiers retirés, rendus inertes, restaurables
 │   │   ├── ScanJob.*         # un scan (FILDES), dans son propre thread, avec ses options
 │   │   ├── ScanManager.*     # lance les scans, un à la fois, avec file d'attente
 │   │   ├── Settings.*        # réglages (QSettings) et leurs valeurs par défaut
@@ -713,6 +750,7 @@ linux-defender/
 │       ├── DashboardPage.*   # page « Accueil » : bandeau d'état, tuiles, lancement des analyses
 │       ├── ScanPanel.*       # page « Analyse » : progression, bilan, résultats filtrés
 │       ├── OnAccessPanel.*   # page « Protection en temps réel » : état, détections
+│       ├── QuarantinePanel.* # page « Quarantaine » : restauration, suppression définitive
 │       ├── HistoryPanel.*    # page « Historique » : analyses passées et leurs menaces
 │       ├── DiagnosticsPanel.*# page « Diagnostic » : vérifications, commandes, corrections
 │       ├── HistoryModel.*    # liste des analyses de l'historique
@@ -754,7 +792,8 @@ linux-defender/
       exclusions, paramètres en pages
 - [x] Diagnostic et corrections en un clic, menu de Dolphin, analyse rapide renforcée
       (emplacements sensibles, programmes en cours), analyses planifiées
-- [ ] Plus tard : quarantaine, scans en parallèle, son des alertes
+- [x] Quarantaine : mise en quarantaine, restauration, suppression définitive
+- [ ] Plus tard : scans en parallèle, son des alertes
 
 Le détail des travaux en cours et à venir est dans [TODO.md](TODO.md).
 

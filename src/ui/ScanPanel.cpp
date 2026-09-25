@@ -4,6 +4,7 @@
 #include "ScanResultsModel.h"
 #include "StatusDisplay.h"
 #include "Widgets.h"
+#include "core/Quarantine.h"
 #include "core/ScanHistory.h"
 #include "core/Settings.h"
 
@@ -11,6 +12,7 @@
 #include <QDate>
 #include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -76,10 +78,11 @@ const QList<ScanResult::Status> kFilterStatuses[FilterCount] = {
 };
 }
 
-ScanPanel::ScanPanel(ScanManager *scans, ScanHistory *history, QWidget *parent)
+ScanPanel::ScanPanel(ScanManager *scans, ScanHistory *history, Quarantine *quarantine, QWidget *parent)
     : QWidget(parent)
     , m_scans(scans)
     , m_history(history)
+    , m_quarantine(quarantine)
     , m_model(new ScanResultsModel(this))
     , m_filter(new ScanResultsFilter(this))
 {
@@ -121,9 +124,19 @@ ScanPanel::ScanPanel(ScanManager *scans, ScanHistory *history, QWidget *parent)
     auto *activityTexts = new QVBoxLayout;
     activityTexts->addWidget(m_activityTitle);
     activityTexts->addWidget(m_activityDetail);
+    // Menaces encore en place après l'analyse : les mettre en quarantaine d'un clic.
+    m_quarantineButton = new QPushButton(StatusDisplay::quarantineIcon(), QString());
+    m_quarantineButton->setToolTip(tr("Retire les fichiers infectés de leur emplacement et les rend inertes ; ils "
+                                      "restent restaurables depuis la page « Quarantaine »"));
+    connect(m_quarantineButton, &QPushButton::clicked, this, [this] { m_quarantine->add(m_model->threatsToQuarantine()); });
+    m_model->setQuarantine(m_quarantine);
+    connect(m_quarantine, &Quarantine::changed, this, &ScanPanel::updateButtons);
+    connect(m_quarantine, &Quarantine::idle, this, &ScanPanel::updateButtons);
+
     auto *activityHeader = new QHBoxLayout;
     activityHeader->addWidget(m_activityIcon, 0, Qt::AlignTop);
     activityHeader->addLayout(activityTexts, 1);
+    activityHeader->addWidget(m_quarantineButton, 0, Qt::AlignTop);
 
     m_progress = new QProgressBar;
     m_progress->setVisible(false);
@@ -217,7 +230,7 @@ ScanPanel::ScanPanel(ScanManager *scans, ScanHistory *history, QWidget *parent)
     // Largeurs initiales tirées de la police du système, pas de valeurs en pixels.
     const int charWidth = fontMetrics().averageCharWidth();
     const int iconWidth = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
-    int statusWidth = 0;
+    int statusWidth = fontMetrics().horizontalAdvance(ScanResultsModel::tr("En quarantaine"));
     for (int status = 0; status < ScanResult::kStatusCount; ++status)
         statusWidth = qMax(statusWidth, fontMetrics().horizontalAdvance(StatusDisplay::resultText(ScanResult::Status(status))));
     // Le texte en gras (menaces) est un peu plus large : marge de 4 caractères.
@@ -474,6 +487,11 @@ void ScanPanel::updateButtons()
     m_fileButton->setEnabled(!scanning);
     m_stopButton->setEnabled(scanning);
     m_exportButton->setEnabled(!scanning && m_model->rowCount() > 0);
+    const qsizetype threats = m_model->threatsToQuarantine().size();
+    m_quarantineButton->setText(threats > 1 ? tr("Mettre les %1 menaces en quarantaine").arg(threats)
+                                            : tr("Mettre la menace en quarantaine"));
+    m_quarantineButton->setVisible(threats > 0 && !scanning);
+    m_quarantineButton->setEnabled(!m_quarantine->isBusy());
     QString quickTip = tr("Analyse de : %1").arg(m_scans->quickScanPaths().join(QStringLiteral(", ")));
     if (m_scans->quickScanSystemAreas())
         quickTip += QLatin1Char('\n') + tr("Et : démarrage automatique, scripts du shell, ~/.local/bin, /tmp, "
@@ -488,10 +506,14 @@ void ScanPanel::showContextMenu(const QPoint &position)
         return;
     const auto status = ScanResult::Status(index.data(ScanResultsModel::StatusRole).toInt());
     const bool threat = status == ScanResult::Status::Infected || status == ScanResult::Status::Suspicious;
-    FileActions::execContextMenu(this, m_view->viewport()->mapToGlobal(position),
-                                 index.siblingAtColumn(ScanResultsModel::PathColumn).data().toString(),
-                                 index.siblingAtColumn(ScanResultsModel::DetailColumn).data().toString(),
-                                 threat ? tr("Copier le nom de la menace") : tr("Copier le détail"));
+    const QString path = index.siblingAtColumn(ScanResultsModel::PathColumn).data().toString();
+    const QString detail = index.siblingAtColumn(ScanResultsModel::DetailColumn).data().toString();
+    // Quarantaine : menaces et fichiers suspects encore en place.
+    std::function<void()> quarantine;
+    if (threat && !index.data(ScanResultsModel::QuarantinedRole).toBool() && QFileInfo::exists(path))
+        quarantine = [this, path, detail] { m_quarantine->add({{path, detail}}); };
+    FileActions::execContextMenu(this, m_view->viewport()->mapToGlobal(position), path, detail,
+                                 threat ? tr("Copier le nom de la menace") : tr("Copier le détail"), quarantine);
 }
 
 void ScanPanel::exportResults()

@@ -28,6 +28,7 @@ Description: lightweight Qt interface for the ClamAV antivirus
   - quick, full and custom scans, with progress, filters and exclusions;
   - automatic scan of USB keys and memory cards when they are mounted;
   - scan history;
+  - quarantine: detected files moved away and made inert, restorable;
   - real-time protection (clamonacc), enabled at installation, with an
     on/off switch;
   - diagnostics of the installation (clamd service and socket, signatures,

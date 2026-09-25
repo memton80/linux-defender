@@ -66,6 +66,9 @@ Paramètres de l'application.
 .I ~/.local/share/linux-defender/history.json
 Historique des analyses.
 .TP
+.I ~/.local/share/linux-defender/quarantine/
+Fichiers en quarantaine (contenu brouillé) et leurs informations (JSON).
+.TP
 .I ~/.config/autostart/linux-defender.desktop
 Présent quand le démarrage automatique est activé.
 .SH VOIR AUSSI

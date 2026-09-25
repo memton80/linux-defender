@@ -36,12 +36,16 @@ void showInFileManager(const QString &path, const QString &activationToken)
 }
 
 void execContextMenu(QWidget *parent, const QPoint &globalPos, const QString &path, const QString &detail,
-                     const QString &detailAction)
+                     const QString &detailAction, const std::function<void()> &quarantine)
 {
     QMenu menu(parent);
     const auto add = [&menu](const char *icon, const QString &text, const std::function<void()> &action) {
         QObject::connect(menu.addAction(QIcon::fromTheme(QString::fromLatin1(icon)), text), &QAction::triggered, action);
     };
+    if (quarantine) {
+        add("folder-locked", QApplication::translate("FileActions", "Mettre en quarantaine"), quarantine);
+        menu.addSeparator();
+    }
     add("document-open-folder", QApplication::translate("FileActions", "Afficher dans le gestionnaire de fichiers"),
         [path] { showInFileManager(path); });
     menu.addSeparator();

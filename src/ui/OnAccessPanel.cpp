@@ -4,10 +4,13 @@
 #include "OnAccessModel.h"
 #include "StatusDisplay.h"
 #include "Widgets.h"
+#include "core/Quarantine.h"
+#include "core/ThreatText.h"
 #include "system/OnAccessController.h"
 
 #include <QCheckBox>
 #include <QDateTime>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -17,12 +20,15 @@
 #include <QTreeView>
 #include <QVBoxLayout>
 
-OnAccessPanel::OnAccessPanel(OnAccessController *controller, PrivilegedHelper *helper, QWidget *parent)
+OnAccessPanel::OnAccessPanel(OnAccessController *controller, PrivilegedHelper *helper, Quarantine *quarantine,
+                             QWidget *parent)
     : QWidget(parent)
     , m_controller(controller)
     , m_helper(helper)
+    , m_quarantine(quarantine)
     , m_model(new OnAccessModel(this))
 {
+    m_model->setQuarantine(m_quarantine);
     // État du service.
     m_icon = new QLabel;
     m_title = new QLabel;
@@ -76,8 +82,8 @@ OnAccessPanel::OnAccessPanel(OnAccessController *controller, PrivilegedHelper *h
     auto *listHeader = new QHBoxLayout;
     listHeader->addWidget(listTitle, 1);
     listHeader->addWidget(m_clearButton);
-    auto *listNote = new QLabel(tr("Les fichiers détectés ne sont ni supprimés ni déplacés : "
-                                   "l'application indique seulement leur emplacement."));
+    auto *listNote = new QLabel(tr("Les fichiers détectés restent en place : clic droit, « Mettre en quarantaine », "
+                                   "pour les retirer et les rendre inertes."));
     listNote->setWordWrap(true);
     Widgets::setSecondary(listNote);
 
@@ -196,8 +202,12 @@ void OnAccessPanel::showContextMenu(const QPoint &position)
     const QModelIndex index = m_view->indexAt(position);
     if (!index.isValid())
         return;
-    FileActions::execContextMenu(this, m_view->viewport()->mapToGlobal(position),
-                                 index.siblingAtColumn(OnAccessModel::PathColumn).data().toString(),
-                                 index.siblingAtColumn(OnAccessModel::ThreatColumn).data().toString(),
-                                 tr("Copier le nom de la menace"));
+    const OnAccessDetection detection = m_model->detection(index.row());
+    // Quarantaine : fichier encore en place, vraiment détecté (pas une archive chiffrée).
+    std::function<void()> quarantine;
+    if (!m_model->isQuarantined(index.row()) && ThreatText::kind(detection.threat) != ThreatText::Kind::Unscanned
+        && QFileInfo::exists(detection.path))
+        quarantine = [this, detection] { m_quarantine->add({{detection.path, detection.threat}}); };
+    FileActions::execContextMenu(this, m_view->viewport()->mapToGlobal(position), detection.path, detection.threat,
+                                 tr("Copier le nom de la menace"), quarantine);
 }

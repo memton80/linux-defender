@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QSet>
 
 class ClamdWatcher;
 class DashboardPage;
@@ -9,6 +10,8 @@ class HistoryPanel;
 class OnAccessController;
 class OnAccessPanel;
 class PrivilegedHelper;
+class Quarantine;
+class QuarantinePanel;
 class QListWidget;
 class QStackedWidget;
 class ScanHistory;
@@ -17,10 +20,10 @@ class ScanPanel;
 class SystemDiagnostics;
 
 /**
- * Fenêtre principale : barre latérale de navigation et cinq pages,
+ * Fenêtre principale : barre latérale de navigation et six pages,
  * « Accueil » (DashboardPage), « Analyse » (ScanPanel), « Protection en
- * temps réel » (OnAccessPanel), « Historique » (HistoryPanel) et
- * « Diagnostic » (DiagnosticsPanel).
+ * temps réel » (OnAccessPanel), « Quarantaine » (QuarantinePanel),
+ * « Historique » (HistoryPanel) et « Diagnostic » (DiagnosticsPanel).
  *
  * Fermer la fenêtre la masque seulement : l'application continue de tourner
  * dans la zone de notification (voir main.cpp), sauf si les paramètres
@@ -32,7 +35,8 @@ class MainWindow : public QMainWindow
 
 public:
     MainWindow(ClamdWatcher *watcher, ScanManager *scans, OnAccessController *onAccess, ScanHistory *history,
-               SystemDiagnostics *diagnostics, PrivilegedHelper *helper, QWidget *parent = nullptr);
+               SystemDiagnostics *diagnostics, PrivilegedHelper *helper, Quarantine *quarantine,
+               QWidget *parent = nullptr);
 
     void showAndActivate();
     // Clic sur l'icône de notification : masque la fenêtre si elle est visible, l'affiche sinon.
@@ -63,7 +67,7 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 
 private:
-    enum Page { HomePage, ScanPage, OnAccessPage, HistoryPage, DiagnosticsPage };
+    enum Page { HomePage, ScanPage, OnAccessPage, QuarantinePage, HistoryPage, DiagnosticsPage };
 
     QWidget *createSidebar();
     void showPage(Page page);
@@ -75,12 +79,17 @@ private:
     ScanManager *m_scans;
     OnAccessController *m_onAccess;
     SystemDiagnostics *m_diagnostics;
+    Quarantine *m_quarantine;
     DashboardPage *m_dashboard;
     ScanPanel *m_scanPanel;
     OnAccessPanel *m_onAccessPanel;
+    QuarantinePanel *m_quarantinePanel;
     HistoryPanel *m_historyPanel;
     DiagnosticsPanel *m_diagnosticsPanel;
     QListWidget *m_navigation;
     QStackedWidget *m_pages;
-    int m_realtimeThreats = 0; // détections en temps réel depuis le lancement, non effacées
+    // Fichiers détectés en temps réel depuis le lancement, pas encore effacés
+    // de la liste ni mis en quarantaine.
+    QSet<QString> m_realtimeThreats;
+    QStringList m_quarantineErrors; // échecs de la série d'opérations en cours
 };

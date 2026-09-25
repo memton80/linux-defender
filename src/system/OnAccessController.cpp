@@ -31,7 +31,10 @@ OnAccessController::OnAccessController(const QDBusConnection &bus, const QString
     , m_log(logPath)
 {
     connect(&m_log, &OnAccessLog::historyLoaded, this, &OnAccessController::historyLoaded);
-    connect(&m_log, &OnAccessLog::threatDetected, this, &OnAccessController::threatDetected);
+    connect(&m_log, &OnAccessLog::threatDetected, this, [this](const OnAccessDetection &detection) {
+        if (!m_ignoreDetection || !m_ignoreDetection(detection))
+            emit threatDetected(detection);
+    });
     connect(&m_log, &OnAccessLog::errorLogged, this, [this](const QString &error) {
         m_lastError = error;
         updateState();
@@ -101,6 +104,11 @@ QStringList OnAccessController::watchedPaths() const
 void OnAccessController::setSearchDirectories(const QStringList &directories)
 {
     m_searchDirectories = directories;
+}
+
+void OnAccessController::setDetectionFilter(const std::function<bool(const OnAccessDetection &)> &ignore)
+{
+    m_ignoreDetection = ignore;
 }
 
 void OnAccessController::refresh()

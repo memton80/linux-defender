@@ -8,7 +8,7 @@ find_program(DBUS_RUN_SESSION dbus-run-session)
 # faux serveur de notifications).
 set(DBUS_TESTS tst_usbmonitor tst_onaccess tst_notifications)
 
-foreach(test tst_clamdclient tst_clamdconfig tst_clamdwatcher tst_diagnostics tst_schedule tst_scanjob tst_scanhistory tst_settings tst_singleinstance tst_autostart
+foreach(test tst_clamdclient tst_clamdconfig tst_clamdwatcher tst_diagnostics tst_quarantine tst_schedule tst_scanjob tst_scanhistory tst_settings tst_singleinstance tst_autostart
              tst_usbmonitor tst_onaccess tst_notifications)
     qt_add_executable(${test} ${test}.cpp FakeClamd.h)
     target_link_libraries(${test} PRIVATE defender_core defender_system Qt6::Test)

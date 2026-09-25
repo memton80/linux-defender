@@ -6,6 +6,7 @@
 
 class Card;
 class QCheckBox;
+class Quarantine;
 class OnAccessController;
 class OnAccessModel;
 class QLabel;
@@ -23,7 +24,8 @@ class OnAccessPanel : public QWidget
     Q_OBJECT
 
 public:
-    OnAccessPanel(OnAccessController *controller, PrivilegedHelper *helper, QWidget *parent = nullptr);
+    OnAccessPanel(OnAccessController *controller, PrivilegedHelper *helper, Quarantine *quarantine,
+                  QWidget *parent = nullptr);
 
 signals:
     // L'utilisateur a effacé la liste des détections.
@@ -37,6 +39,7 @@ private:
 
     OnAccessController *m_controller;
     PrivilegedHelper *m_helper;
+    Quarantine *m_quarantine;
     QCheckBox *m_toggle;
     QLabel *m_toggleMessage;
     bool m_toggling = false; // action lancée par la case, résultat attendu

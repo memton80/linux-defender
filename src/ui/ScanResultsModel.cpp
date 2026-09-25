@@ -46,7 +46,17 @@ ScanResultsModel::ScanResultsModel(QObject *parent)
 {
     for (int status = 0; status < ScanResult::kStatusCount; ++status)
         m_icons[status] = StatusDisplay::resultIcon(ScanResult::Status(status));
+    m_quarantineIcon = StatusDisplay::quarantineIcon();
     m_infectedFont.setBold(true);
+}
+
+void ScanResultsModel::setQuarantine(const Quarantine *quarantine)
+{
+    m_quarantine = quarantine;
+    connect(quarantine, &Quarantine::changed, this, [this] {
+        if (!m_results.isEmpty())
+            emit dataChanged(index(0, 0), index(int(m_results.size()) - 1, ColumnCount - 1));
+    });
 }
 
 void ScanResultsModel::clear()
@@ -81,6 +91,16 @@ void ScanResultsModel::append(const QList<ScanResult> &results)
     endInsertRows();
 }
 
+QList<Quarantine::Item> ScanResultsModel::threatsToQuarantine() const
+{
+    QList<Quarantine::Item> items;
+    for (const ScanResult &result : m_results) {
+        if (result.status == ScanResult::Status::Infected && !(m_quarantine && m_quarantine->contains(result.path)))
+            items.append({result.path, result.detail});
+    }
+    return items;
+}
+
 qint64 ScanResultsModel::unlistedCleanCount() const
 {
     return m_unlistedClean;
@@ -101,12 +121,14 @@ QVariant ScanResultsModel::data(const QModelIndex &index, int role) const
     if (!index.isValid() || index.row() >= m_results.size())
         return {};
     const ScanResult &result = m_results.at(index.row());
+    const bool quarantined = result.status != ScanResult::Status::Clean && m_quarantine
+        && m_quarantine->contains(result.path);
 
     switch (role) {
     case Qt::DisplayRole:
         switch (index.column()) {
         case StatusColumn:
-            return StatusDisplay::resultText(result.status);
+            return quarantined ? tr("En quarantaine") : StatusDisplay::resultText(result.status);
         case PathColumn:
             return result.path;
         case DetailColumn:
@@ -127,13 +149,15 @@ QVariant ScanResultsModel::data(const QModelIndex &index, int role) const
     }
     case Qt::DecorationRole:
         if (index.column() == StatusColumn)
-            return m_icons[int(result.status)];
+            return quarantined ? m_quarantineIcon : m_icons[int(result.status)];
         break;
     case Qt::FontRole:
         // Menace en gras : bien visible, sans couleur codée en dur.
-        if (result.status == ScanResult::Status::Infected)
+        if (result.status == ScanResult::Status::Infected && !quarantined)
             return m_infectedFont;
         break;
+    case QuarantinedRole:
+        return quarantined;
     case StatusRole:
         return int(result.status);
     case SortRole:

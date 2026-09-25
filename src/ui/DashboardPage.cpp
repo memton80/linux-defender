@@ -9,6 +9,7 @@
 
 #include <QCommandLinkButton>
 #include <QDir>
+#include <QFileInfo>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -54,6 +55,16 @@ QString onAccessShortTitle(OnAccessController::State state)
         break;
     }
     return DashboardPage::tr("État inconnu");
+}
+
+// Toutes les menaces de cette analyse ont-elles quitté leur emplacement
+// (mises en quarantaine, ou supprimées) ? Seulement si elles sont toutes
+// connues : l'historique n'en garde que les premières.
+bool threatsHandled(const ScanRecord &record)
+{
+    return record.infected > 0 && record.infected == record.threats.size()
+        && std::none_of(record.threats.cbegin(), record.threats.cend(),
+                        [](const ScanResult &threat) { return QFileInfo::exists(threat.path); });
 }
 
 QLabel *sectionTitle(const QString &text)
@@ -309,14 +320,16 @@ void DashboardPage::updateBanner()
         title = m_realtimeThreats > 1 ? tr("%1 menaces détectées en temps réel").arg(m_realtimeThreats)
                                       : tr("Menace détectée en temps réel");
         text = tr("La protection en temps réel a signalé des fichiers infectés depuis le lancement.\n"
-                  "Les fichiers n'ont été ni supprimés ni déplacés : vérifiez-les.");
+                  "Ils sont toujours en place : mettez-les en quarantaine (bouton de l'alerte, ou clic droit sur la "
+                  "détection).");
         action = BannerAction::ShowOnAccess;
         actionText = tr("Voir les détections");
-    } else if (last && last->infected > 0) {
+    } else if (last && last->infected > 0 && !threatsHandled(*last)) {
         level = Level::Negative;
         title = last->infected > 1 ? tr("%1 menaces détectées").arg(number(last->infected)) : tr("Menace détectée");
         text = tr("Dernière analyse : %1, %2.\n"
-                  "Les fichiers n'ont été ni supprimés ni déplacés : vérifiez-les, puis relancez une analyse.")
+                  "Les fichiers sont toujours en place : mettez-les en quarantaine (clic droit sur la menace), puis "
+                  "relancez une analyse.")
                    .arg(StatusDisplay::originText(last->origin), StatusDisplay::relativeTime(last->started));
         action = BannerAction::ShowHistory;
         actionText = tr("Voir les menaces");
@@ -378,6 +391,8 @@ void DashboardPage::updateBanner()
             text = tr("clamd répond et les signatures sont à jour.\n"
                       "Sans protection en temps réel, les menaces sont détectées lors des analyses.");
         }
+        if (warnings.isEmpty() && last && threatsHandled(*last))
+            text += QLatin1Char('\n') + tr("Les menaces de la dernière analyse ont été mises en quarantaine ou supprimées.");
     }
 
     m_bannerAction = action;
