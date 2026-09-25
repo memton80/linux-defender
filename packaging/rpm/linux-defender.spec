@@ -146,6 +146,9 @@ fi
 %config(noreplace) %{_sysconfdir}/linux-defender/clamonacc.conf
 %config(noreplace) %{_sysconfdir}/logrotate.d/linux-defender
 %{_libexecdir}/linux-defender-helper
+# Action polkit ; dossiers possédés aussi : polkit n'est que recommandé.
+%dir %{_datadir}/polkit-1
+%dir %{_datadir}/polkit-1/actions
 %{_datadir}/polkit-1/actions/io.github.memton80.linux-defender.policy
 
 %changelog
