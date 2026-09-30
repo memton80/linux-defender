@@ -18,8 +18,8 @@ clamd et des notifications, démarrage automatique à l'ouverture de session.
 Les paquets de chaque version sont sur la page des releases :
 **<https://github.com/memton80/linux-defender/releases>**.
 
-Version actuelle : **1.0.2**. Chaque release contient trois fichiers (remplacez `X.Y.Z` par la
-version, par exemple `1.0.2`) :
+Version actuelle : **1.0.3**. Chaque release contient trois fichiers (remplacez `X.Y.Z` par la
+version, par exemple `1.0.3`) :
 
 | Fichier | Pour |
 |---|---|
@@ -699,18 +699,18 @@ produit. Ils sont aussi relancés pendant la construction de chaque paquet.
 
 ### Publier une version
 
-La version est écrite à un seul endroit : le fichier `VERSION` à la racine (`1.0.2`). CMake,
+La version est écrite à un seul endroit : le fichier `VERSION` à la racine (`1.0.3`). CMake,
 les paquets, la page de manuel et la fenêtre « À propos » la lisent tous là. Pour publier :
 
 ```sh
-echo 1.0.3 > VERSION        # puis journal des modifications, commit, fusion dans main
-git tag v1.0.3
-git push origin v1.0.3
+echo 1.0.4 > VERSION        # puis journal des modifications, commit, fusion dans main
+git tag v1.0.4
+git push origin v1.0.4
 ```
 
 Le workflow crée alors la release GitHub avec les trois fichiers. Le tag doit correspondre au
-fichier `VERSION` (sinon la CI s'arrête). Un tag avec suffixe (`v1.0.3-rc1`) crée une
-préversion, notée `1.0.3~rc1` dans les paquets (le `~` la classe avant la version finale).
+fichier `VERSION` (sinon la CI s'arrête). Un tag avec suffixe (`v1.0.4-rc1`) crée une
+préversion, notée `1.0.4~rc1` dans les paquets (le `~` la classe avant la version finale).
 
 ### Construire les paquets en local
 

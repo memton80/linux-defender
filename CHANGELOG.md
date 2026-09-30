@@ -5,7 +5,7 @@ Les versions publiées correspondent aux tags `vX.Y.Z` (voir les
 dans le fichier `VERSION` ; avant la 1.0.2, les paquets construits hors tag portaient la version
 `0.0.0~dev`.
 
-## [Non publié]
+## [1.0.3] — 2026-09-30
 
 ### Corrigé
 

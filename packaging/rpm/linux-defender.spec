@@ -152,6 +152,12 @@ fi
 %{_datadir}/polkit-1/actions/io.github.memton80.linux-defender.policy
 
 %changelog
+* Wed Sep 30 2026 memton80 <memton80@users.noreply.github.com> - 1.0.3-1
+- Quarantaine : fichier de nouveau présent signalé, plus de fausse alerte.
+- Analyse rapide plus jamais ignorée ; fichier modifié analysé de nouveau.
+- Machine partagée : détections des autres utilisateurs ignorées.
+- Détails : CHANGELOG.md.
+
 * Thu Sep 24 2026 memton80 <memton80@users.noreply.github.com> - 1.0.2-1
 - Nouvelle interface : tableau de bord, historique, paramètres en pages.
 - Protection en temps réel activée et démarrée à l'installation.

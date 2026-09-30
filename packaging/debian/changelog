@@ -1,3 +1,16 @@
+linux-defender (1.0.3) unstable; urgency=medium
+
+  * Quarantaine : un fichier de nouveau présent au même emplacement est
+    signalé et peut être mis en quarantaine ; plus de fausse alerte après
+    une mise en quarantaine.
+  * Analyse rapide plus jamais ignorée comme doublon ; fichier modifié
+    depuis sa détection analysé de nouveau avant la quarantaine.
+  * Machine partagée : détections des autres utilisateurs ignorées.
+  * Détails : CHANGELOG.md. La version de la première ligne est remplacée
+    par packaging/build-deb.sh (fichier VERSION).
+
+ -- memton80 <memton80@users.noreply.github.com>  Wed, 30 Sep 2026 15:00:00 +0000
+
 linux-defender (1.0.2) unstable; urgency=medium
 
   * Nouvelle interface : tableau de bord, historique, paramètres en pages.
