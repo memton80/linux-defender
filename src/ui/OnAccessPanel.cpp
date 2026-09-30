@@ -203,11 +203,18 @@ void OnAccessPanel::showContextMenu(const QPoint &position)
     if (!index.isValid())
         return;
     const OnAccessDetection detection = m_model->detection(index.row());
-    // Quarantaine : fichier encore en place, vraiment détecté (pas une archive chiffrée).
+    // Quarantaine : fichier encore en place, vraiment détecté (pas une archive
+    // chiffrée). Modifié ou remplacé depuis la détection : ce n'est peut-être
+    // plus le fichier détecté, il est d'abord analysé de nouveau.
     std::function<void()> quarantine;
+    std::function<void()> rescan;
     if (!m_model->isQuarantined(index.row()) && ThreatText::kind(detection.threat) != ThreatText::Kind::Unscanned
-        && QFileInfo::exists(detection.path))
-        quarantine = [this, detection] { m_quarantine->add({{detection.path, detection.threat}}); };
+        && QFileInfo::exists(detection.path)) {
+        if (FileActions::changedSince(detection.path, detection.time))
+            rescan = [this, detection] { emit scanRequested({detection.path}); };
+        else
+            quarantine = [this, detection] { m_quarantine->add({{detection.path, detection.threat}}); };
+    }
     FileActions::execContextMenu(this, m_view->viewport()->mapToGlobal(position), detection.path, detection.threat,
-                                 tr("Copier le nom de la menace"), quarantine);
+                                 tr("Copier le nom de la menace"), quarantine, rescan);
 }

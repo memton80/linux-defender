@@ -129,6 +129,7 @@ public:
     void start();
     // Demande l'arrêt : finished() arrive peu après, avec `cancelled` à true.
     void cancel();
+    bool isCancelled() const;
 
     // Analyse une réponse de clamd à FILDES. Renvoie std::nullopt si elle
     // n'est pas reconnue (par exemple si clamd ne comprend pas la commande).

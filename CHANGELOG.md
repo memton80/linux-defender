@@ -9,6 +9,23 @@ dans le fichier `VERSION` ; avant la 1.0.2, les paquets construits hors tag port
 
 ### Corrigé
 
+- **Fichier de nouveau présent affiché « en quarantaine ».** Un fichier était considéré en
+  quarantaine d'après son seul emplacement : téléchargé de nouveau au même endroit, il apparaissait
+  « en quarantaine » (analyse, temps réel, historique) sans pouvoir y être mis, et sa détection en
+  temps réel était ignorée pendant une minute. Il est maintenant signalé et peut être mis en
+  quarantaine à son tour.
+- **Fausse alerte après une mise en quarantaine.** La détection que `clamonacc` produit en lisant le
+  fichier à mettre en quarantaine pouvait arriver avant la fin de la copie, et déclencher l'alerte
+  « Menace détectée… toujours en place ». Elle est ignorée dès la demande.
+- **Analyse rapide ignorée.** Demandée pendant l'analyse des mêmes dossiers sans les emplacements
+  sensibles, elle était considérée comme un doublon : les emplacements sensibles et les programmes
+  en cours n'étaient pas analysés. De même, une analyse arrêtée puis relancée aussitôt n'était pas
+  relancée.
+- **Quarantaine depuis l'historique ou la liste du temps réel** d'un fichier modifié ou remplacé
+  depuis sa détection : l'action proposée est maintenant « Analyser de nouveau », au lieu de mettre
+  en quarantaine un fichier qui n'est peut-être plus celui qui a été détecté.
+- **Machine partagée** : les détections des fichiers des autres utilisateurs (`clamonacc` surveille
+  tout `/home`) ne sont plus signalées ni listées.
 - Dossiers partagés (`/tmp`, `/var/tmp`, `/dev/shm`) : les fichiers des autres utilisateurs
   (illisibles) ne sont plus comptés en erreur.
 - Un fichier contenu dans plusieurs des chemins choisis (dossier et sous-dossier) n'est plus

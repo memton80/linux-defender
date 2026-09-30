@@ -128,13 +128,16 @@ QList<QuarantineEntry> Quarantine::entries() const
 
 bool Quarantine::contains(const QString &originalPath) const
 {
-    return m_originalPaths.contains(originalPath);
+    // Emplacement de nouveau occupé : c'est un autre fichier, toujours en place.
+    return m_originalPaths.contains(originalPath) && !exists(originalPath);
 }
 
 bool Quarantine::isRecentlyQuarantined(const QString &path) const
 {
+    if (m_pending.contains(path))
+        return true;
     const QDateTime when = m_recent.value(path);
-    return when.isValid() && when.secsTo(QDateTime::currentDateTime()) < kRecentSecs;
+    return when.isValid() && when.secsTo(QDateTime::currentDateTime()) < kRecentSecs && !exists(path);
 }
 
 bool Quarantine::isBusy() const
@@ -144,6 +147,10 @@ bool Quarantine::isBusy() const
 
 void Quarantine::add(const QList<Item> &items)
 {
+    // Marqués dès la demande : la détection de clamonacc peut arriver pendant
+    // la copie, bien avant le résultat de l'opération.
+    for (const Item &item : items)
+        ++m_pending[item.path];
     const QString directory = m_directory;
     enqueue([this, directory, items] {
         for (const Item &item : items) {
@@ -152,6 +159,8 @@ void Quarantine::add(const QList<Item> &items)
             addFile(directory, item, &entry, &error);
             // Résultat traité dans le thread de l'objet (celui de l'interface).
             QMetaObject::invokeMethod(this, [this, item, error] {
+                if (--m_pending[item.path] <= 0)
+                    m_pending.remove(item.path);
                 if (error.isEmpty())
                     m_recent.insert(item.path, QDateTime::currentDateTime());
                 reload();

@@ -113,6 +113,7 @@ private slots:
     void explainError_data();
     void explainError();
     void unitObjectPath();
+    void otherUsersFilesIgnored();
     void notInstalledWithoutBinary();
     void unreadableLogIsReported();
     void detectionFilter();
@@ -485,6 +486,37 @@ void TestOnAccess::explainError()
     QFETCH(QString, expected);
     const QString explanation = OnAccessController::explainError(error);
     QVERIFY2(explanation.contains(expected), qPrintable(explanation));
+}
+
+void TestOnAccess::otherUsersFilesIgnored()
+{
+    // Dossier partagé et fichier d'un utilisateur `owner` ; `other` est un
+    // autre utilisateur de la machine. En root, les fichiers sont donnés à un
+    // utilisateur quelconque (root, lui, voit tout).
+    const QString shared = m_dir.filePath(QStringLiteral("partage"));
+    const QString file = shared + QStringLiteral("/facture.exe");
+    QVERIFY(QDir().mkpath(shared));
+    writeFile(file, "x");
+    uint owner = ::getuid();
+    if (owner == 0) {
+        owner = 12345;
+        QCOMPARE(::chown(QFile::encodeName(shared).constData(), owner, owner), 0);
+        QCOMPARE(::chown(QFile::encodeName(file).constData(), owner, owner), 0);
+    }
+    const uint other = owner + 1;
+    const QString otherHome = m_dir.filePath(QStringLiteral("autre"));
+    const QString ownerHome = m_dir.filePath(QStringLiteral("proprietaire"));
+
+    QVERIFY(OnAccessController::concernsUser(file, ownerHome, owner));
+    QVERIFY(!OnAccessController::concernsUser(file, otherHome, other));
+    // Dans son propre dossier personnel : toujours signalé, quel qu'en soit le propriétaire.
+    QVERIFY(OnAccessController::concernsUser(file, shared, other));
+    // Fichier déjà supprimé : propriétaire du dossier qui le contenait.
+    const QString deleted = shared + QStringLiteral("/sous-dossier/supprime.exe");
+    QVERIFY(OnAccessController::concernsUser(deleted, ownerHome, owner));
+    QVERIFY(!OnAccessController::concernsUser(deleted, otherHome, other));
+    // Dossier de root (/tmp...) : signalé à tous.
+    QVERIFY(OnAccessController::concernsUser(QStringLiteral("/linux-defender-absent/x.exe"), otherHome, other));
 }
 
 void TestOnAccess::unitObjectPath()

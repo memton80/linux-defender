@@ -3,10 +3,14 @@
 #include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QStandardPaths>
+
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace
 {
@@ -29,9 +33,21 @@ OnAccessController::OnAccessController(const QDBusConnection &bus, const QString
     : QObject(parent)
     , m_bus(bus)
     , m_log(logPath)
+    , m_home(QDir::homePath())
+    , m_uid(uint(::getuid()))
 {
-    connect(&m_log, &OnAccessLog::historyLoaded, this, &OnAccessController::historyLoaded);
+    // Détections des fichiers des autres utilisateurs : ignorées (concernsUser).
+    connect(&m_log, &OnAccessLog::historyLoaded, this, [this](const QList<OnAccessDetection> &detections) {
+        QList<OnAccessDetection> mine;
+        for (const OnAccessDetection &detection : detections) {
+            if (concernsUser(detection.path, m_home, m_uid))
+                mine << detection;
+        }
+        emit historyLoaded(mine);
+    });
     connect(&m_log, &OnAccessLog::threatDetected, this, [this](const OnAccessDetection &detection) {
+        if (!concernsUser(detection.path, m_home, m_uid))
+            return;
         if (!m_ignoreDetection || !m_ignoreDetection(detection))
             emit threatDetected(detection);
     });
@@ -314,6 +330,25 @@ QString OnAccessController::explainError(const QString &logError)
         return tr("Trop de dossiers à surveiller : augmentez la limite du noyau "
                   "fs.inotify.max_user_watches (voir le README).");
     return tr("Erreur de clamonacc : %1\nDétails : journalctl -u %2").arg(logError, QString::fromLatin1(kServiceName));
+}
+
+bool OnAccessController::concernsUser(const QString &path, const QString &home, uint uid)
+{
+    const QString file = QDir::cleanPath(path);
+    for (const QString &homeDir : {QDir::cleanPath(home), QFileInfo(home).canonicalFilePath()}) {
+        if (!homeDir.isEmpty() && homeDir != QLatin1String("/")
+            && (file == homeDir || file.startsWith(homeDir + QLatin1Char('/'))))
+            return true;
+    }
+    // Propriétaire du fichier, ou du dossier existant le plus proche.
+    QString current = file;
+    struct stat info;
+    while (::lstat(QFile::encodeName(current).constData(), &info) != 0) {
+        if (current.isEmpty() || current == QLatin1String("/"))
+            return true; // propriétaire inconnu : signalé
+        current = QFileInfo(current).absolutePath();
+    }
+    return info.st_uid == uid || info.st_uid == 0;
 }
 
 QString OnAccessController::unitObjectPath(const QString &unitName)

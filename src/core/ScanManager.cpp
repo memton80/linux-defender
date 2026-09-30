@@ -44,12 +44,21 @@ void ScanManager::scan(const QStringList &paths, Origin origin, bool systemAreas
 {
     if (paths.isEmpty())
         return;
-    // Même demande déjà en cours ou en attente (clé montée deux fois...) : ignorée.
-    if (m_job && m_job->paths() == paths)
+    // Même demande déjà en cours ou en attente (clé montée deux fois...) :
+    // ignorée. Une analyse des seuls dossiers ne couvre pas une analyse
+    // rapide, qui y ajoute les emplacements sensibles et les programmes en
+    // cours ; une analyse en train de s'arrêter ne couvre plus rien.
+    if (m_job && !m_job->isCancelled() && m_current.paths == paths && (m_current.systemAreas || !systemAreas))
         return;
-    for (const Request &request : std::as_const(m_queue)) {
-        if (request.paths == paths)
-            return;
+    for (Request &request : m_queue) {
+        if (request.paths != paths)
+            continue;
+        // En attente, sans les emplacements sensibles : elle les analysera aussi.
+        if (systemAreas && !request.systemAreas) {
+            request.systemAreas = true;
+            request.origin = origin;
+        }
+        return;
     }
 
     m_queue.append({paths, origin, systemAreas});
@@ -84,6 +93,7 @@ void ScanManager::startNext()
         return;
 
     const Request request = m_queue.takeFirst();
+    m_current = request;
     m_origin = request.origin;
     // Limite de taille de clamd relue à chaque analyse : sa configuration a pu changer.
     ScanOptions options = m_options;

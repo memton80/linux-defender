@@ -30,6 +30,8 @@ public:
 signals:
     // L'utilisateur a effacé la liste des détections.
     void detectionsCleared();
+    // Analyser de nouveau un fichier modifié depuis sa détection.
+    void scanRequested(const QStringList &paths);
 
 private:
     void updateState();

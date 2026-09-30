@@ -178,6 +178,11 @@ void ScanJob::cancel()
     m_cancelled = true;
 }
 
+bool ScanJob::isCancelled() const
+{
+    return m_cancelled;
+}
+
 std::optional<ScanResult> ScanJob::parseReply(const QString &path, const QByteArray &reply)
 {
     // Réponses possibles (sans l'octet nul final) :

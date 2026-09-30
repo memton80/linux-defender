@@ -103,12 +103,19 @@ HistoryPanel::HistoryPanel(ScanHistory *history, Quarantine *quarantine, QWidget
         const QString path = item->data(0, Qt::UserRole).toString();
         const QString threat = item->text(1);
         // Quarantaine : menace ou fichier suspect, toujours à son emplacement.
+        // Modifié ou remplacé depuis l'analyse : ce n'est peut-être plus le
+        // fichier détecté, il est d'abord analysé de nouveau.
         const auto status = ScanResult::Status(item->data(1, Qt::UserRole).toInt());
         std::function<void()> quarantine;
-        if (status != ScanResult::Status::Unscanned && !m_quarantine->contains(path) && QFileInfo::exists(path))
-            quarantine = [this, path, threat] { m_quarantine->add({{path, threat}}); };
+        std::function<void()> rescan;
+        if (status != ScanResult::Status::Unscanned && !m_quarantine->contains(path) && QFileInfo::exists(path)) {
+            if (FileActions::changedSince(path, m_detailsStarted))
+                rescan = [this, path] { emit scanRequested({path}); };
+            else
+                quarantine = [this, path, threat] { m_quarantine->add({{path, threat}}); };
+        }
         FileActions::execContextMenu(this, m_threats->viewport()->mapToGlobal(position), path, threat,
-                                     tr("Copier le nom de la menace"), quarantine);
+                                     tr("Copier le nom de la menace"), quarantine, rescan);
     });
     // L'état des fichiers (en place, en quarantaine) change : détails à jour.
     connect(m_quarantine, &Quarantine::changed, this, &HistoryPanel::showDetails);
@@ -162,6 +169,7 @@ void HistoryPanel::showDetails()
         return;
 
     const ScanRecord record = m_model->record(current.row());
+    m_detailsStarted = record.started;
     const ScanSummary summary = record.toSummary();
     const StatusDisplay::Level level = StatusDisplay::summaryLevel(summary);
     m_details->setLevel(level);

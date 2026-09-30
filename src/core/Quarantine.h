@@ -65,10 +65,15 @@ public:
 
     // Fichiers en quarantaine, les plus récents en premier.
     QList<QuarantineEntry> entries() const;
-    // Un fichier venu de cet emplacement est-il en quarantaine ?
+    // Un fichier venu de cet emplacement est-il en quarantaine, sans avoir été
+    // remplacé depuis ? Un nouveau fichier au même emplacement (téléchargé de
+    // nouveau...) n'est pas en quarantaine : il peut y être mis à son tour.
     bool contains(const QString &originalPath) const;
-    // Fichier mis en quarantaine depuis moins d'une minute ? La protection en
-    // temps réel peut le signaler encore une fois, lu pour être déplacé.
+    // Détection due à la mise en quarantaine elle-même ? clamonacc analyse le
+    // fichier quand l'application le lit pour le copier, et peut le signaler
+    // avant la fin de l'opération. Vrai pendant l'opération (dès la demande),
+    // puis une minute tant que le fichier n'a pas été remplacé : un nouveau
+    // fichier au même emplacement est signalé normalement.
     bool isRecentlyQuarantined(const QString &path) const;
     bool isBusy() const;
 
@@ -103,6 +108,7 @@ private:
     QList<QuarantineEntry> m_entries;
     QSet<QString> m_originalPaths;
     QHash<QString, QDateTime> m_recent; // chemins d'origine mis en quarantaine, et quand
+    QHash<QString, int> m_pending;      // chemins en cours de mise en quarantaine (demandes en attente comprises)
     QQueue<std::function<void()>> m_jobs;
     QThread *m_thread = nullptr;
 };

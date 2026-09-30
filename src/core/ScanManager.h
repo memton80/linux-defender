@@ -62,8 +62,8 @@ private:
     struct Request
     {
         QStringList paths;
-        Origin origin;
-        bool systemAreas;
+        Origin origin = Origin::Manual;
+        bool systemAreas = false;
     };
 
     void startNext();
@@ -73,6 +73,7 @@ private:
     QStringList m_quickPaths;
     bool m_quickSystemAreas = false;
     QList<Request> m_queue;
+    Request m_current; // demande du scan en cours (m_job)
     ScanJob *m_job = nullptr;
     Origin m_origin = Origin::Manual;
 };

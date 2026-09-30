@@ -299,7 +299,10 @@ signalées, ajoutez `AlertExceedsMax yes` à cette configuration, puis redémarr
 Un fichier détecté reste à sa place tant que vous ne décidez rien. Pour le neutraliser :
 
 - clic droit sur la menace (page « Analyse », « Protection en temps réel » ou détail d'une analyse
-  de l'historique) → **Mettre en quarantaine** ;
+  de l'historique) → **Mettre en quarantaine**. Si le fichier a été modifié ou remplacé depuis sa
+  détection (analyse ancienne de l'historique, par exemple), ce n'est peut-être plus le fichier
+  détecté : l'action proposée est alors **Analyser de nouveau**, et le résultat de cette analyse
+  permet de le mettre en quarantaine ;
 - page « Analyse », après une analyse : bouton **Mettre les N menaces en quarantaine** (fichiers
   infectés ; les fichiers seulement suspects, souvent légitimes, se traitent un par un) ;
 - alerte d'une détection en temps réel : bouton **Mettre en quarantaine**.
@@ -323,7 +326,9 @@ Limites : l'application agit avec vos droits, sans privilège. Un fichier qui ne
 pas, ou sur un support en lecture seule, ne peut pas être retiré : un message l'explique et rien
 n'est modifié. Un lien symbolique n'est jamais suivi. Si le fichier change pendant la mise en
 quarantaine, rien n'est fait. La détection que `clamonacc` produit en lisant le fichier à ce
-moment-là n'est pas signalée.
+moment-là n'est pas signalée. Un nouveau fichier apparu au même emplacement (téléchargé de
+nouveau, par exemple) n'est pas considéré comme en quarantaine : il est signalé normalement et
+peut y être mis à son tour.
 
 ### Diagnostic
 
@@ -559,6 +564,10 @@ suit sans scrutation périodique (inotify). ClamAV crée ses journaux illisibles
 utilisateurs (droits 0640, root) : le service doit donc créer ce fichier à l'avance, lisible
 (0644). Sinon, la page le signale. Ce journal ne contient que les détections et les erreurs, mais
 il est lisible par tous les utilisateurs de la machine.
+
+Sur une machine partagée, `clamonacc` surveille tout `/home` : chaque utilisateur ne voit que les
+détections qui le concernent, celles de son dossier personnel et, ailleurs, des fichiers qui lui
+appartiennent (ou à root). Les fichiers des autres utilisateurs ne sont ni signalés ni listés.
 
 `clamonacc` n'horodate pas son journal : les détections antérieures au lancement de l'application
 apparaissent avec la mention « Avant le lancement ».

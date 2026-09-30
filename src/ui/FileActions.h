@@ -4,6 +4,7 @@
 
 #include <functional>
 
+class QDateTime;
 class QPoint;
 class QWidget;
 
@@ -18,10 +19,17 @@ namespace FileActions
 // permet au gestionnaire de fichiers de prendre le focus sous Wayland.
 void showInFileManager(const QString &path, const QString &activationToken = {});
 
+// Le fichier a-t-il été modifié ou remplacé depuis `time` (sa détection) ?
+// Ce n'est alors peut-être plus le fichier détecté : il faut l'analyser de
+// nouveau avant de le mettre en quarantaine. Faux si `time` est inconnu.
+bool changedSince(const QString &path, const QDateTime &time);
+
 // Menu contextuel d'une ligne : mettre en quarantaine (si `quarantine` est
-// fourni), afficher dans le gestionnaire de fichiers, copier le chemin,
-// copier `detail` (nom de la menace ou message d'erreur, si non vide ;
-// `detailAction` est le libellé de cette action).
+// fourni), analyser de nouveau (si `rescan` est fourni), afficher dans le
+// gestionnaire de fichiers, copier le chemin, copier `detail` (nom de la
+// menace ou message d'erreur, si non vide ; `detailAction` est le libellé de
+// cette action).
 void execContextMenu(QWidget *parent, const QPoint &globalPos, const QString &path, const QString &detail = {},
-                     const QString &detailAction = {}, const std::function<void()> &quarantine = {});
+                     const QString &detailAction = {}, const std::function<void()> &quarantine = {},
+                     const std::function<void()> &rescan = {});
 }

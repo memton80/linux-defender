@@ -89,6 +89,13 @@ public:
     static bool isInotifyLimitError(const QString &logError);
     // Chemin D-Bus d'une unité systemd (« a-b.service » -> « .../a_2db_2eservice »).
     static QString unitObjectPath(const QString &unitName);
+    // La détection concerne-t-elle l'utilisateur ? clamonacc surveille tout
+    // /home et son journal est lisible par tous : sur une machine partagée,
+    // les fichiers des autres ne sont ni signalés ni listés. Concernés : ceux
+    // du dossier personnel `home`, et ailleurs ceux qui appartiennent à `uid`
+    // ou à root. Un fichier déjà supprimé : propriétaire du dossier existant
+    // le plus proche (un dossier personnel, /tmp...).
+    static bool concernsUser(const QString &path, const QString &home, uint uid);
 
 signals:
     void stateChanged();
@@ -110,6 +117,8 @@ private:
     OnAccessLog m_log;
     QStringList m_searchDirectories = defaultSearchDirectories();
     std::function<bool(const OnAccessDetection &)> m_ignoreDetection;
+    QString m_home;                // utilisateur de l'application (concernsUser)
+    uint m_uid = 0;
     QString m_clamonacc;
     QStringList m_watchedPaths;
     QVariantMap m_unit;            // propriétés systemd du service de Linux Defender

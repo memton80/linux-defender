@@ -105,6 +105,8 @@ MainWindow::MainWindow(ClamdWatcher *watcher, ScanManager *scans, OnAccessContro
         showPage(OnAccessPage);
         updateNavigationIcons();
     });
+    connect(m_onAccessPanel, &OnAccessPanel::scanRequested, this, &MainWindow::scanPaths);
+    connect(m_historyPanel, &HistoryPanel::scanRequested, this, &MainWindow::scanPaths);
     connect(m_onAccessPanel, &OnAccessPanel::detectionsCleared, this, [this] {
         m_realtimeThreats.clear();
         m_dashboard->setRealtimeThreats(0);

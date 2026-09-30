@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDateTime>
 #include <QWidget>
 
 class Card;
@@ -26,6 +27,10 @@ public:
     // Sélectionne l'analyse la plus récente.
     void selectLatest();
 
+signals:
+    // Analyser de nouveau un fichier modifié depuis sa détection.
+    void scanRequested(const QStringList &paths);
+
 protected:
     void showEvent(QShowEvent *event) override;
 
@@ -47,4 +52,5 @@ private:
     QLabel *m_detailsText;
     QLabel *m_threatsTitle;
     QTreeWidget *m_threats;
+    QDateTime m_detailsStarted; // début de l'analyse affichée
 };

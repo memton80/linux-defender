@@ -49,6 +49,7 @@ private slots:
     void detectsDamagedFile();
     void removesForGood();
     void asynchronousOperations();
+    void replacedFileIsNotQuarantined();
 
 private:
     QString quarantineDir() const { return m_dir->filePath(QStringLiteral("quarantaine")); }
@@ -251,6 +252,33 @@ void TestQuarantine::asynchronousOperations()
     QVERIFY(quarantine.entries().isEmpty());
     QCOMPARE(readFile(first), QByteArray("1"));
     QVERIFY(!QFile::exists(second));
+}
+
+void TestQuarantine::replacedFileIsNotQuarantined()
+{
+    const QString path = filesDir() + QStringLiteral("/setup.exe");
+    writeFile(path, FakeClamd::kVirusMarker);
+
+    Quarantine quarantine(quarantineDir());
+    QSignalSpy idle(&quarantine, &Quarantine::idle);
+    quarantine.add({{path, QStringLiteral("Win.Trojan.A")}});
+    // Dès la demande : clamonacc peut signaler la lecture du fichier pendant la copie.
+    QVERIFY(quarantine.isRecentlyQuarantined(path));
+    QVERIFY(idle.wait(5000));
+    QVERIFY(quarantine.contains(path));
+    QVERIFY(quarantine.isRecentlyQuarantined(path));
+
+    // Téléchargé de nouveau au même emplacement : un autre fichier, en place,
+    // à signaler et à pouvoir mettre en quarantaine à son tour.
+    writeFile(path, FakeClamd::kVirusMarker);
+    QVERIFY(!quarantine.contains(path));
+    QVERIFY(!quarantine.isRecentlyQuarantined(path));
+    QCOMPARE(quarantine.entries().size(), 1);
+
+    quarantine.add({{path, QStringLiteral("Win.Trojan.A")}});
+    QVERIFY(idle.wait(5000));
+    QCOMPARE(quarantine.entries().size(), 2);
+    QVERIFY(quarantine.contains(path));
 }
 
 QTEST_GUILESS_MAIN(TestQuarantine)

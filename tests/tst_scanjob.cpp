@@ -104,6 +104,8 @@ private slots:
     void findsDeletedRunningProgram();
     void skipsOthersFilesInSharedFolders();
     void managerQueuesScans();
+    void managerRestartsAfterCancel();
+    void managerDistinguishesQuickScan();
     void managerAppliesOptions();
     void parseReply_data();
     void parseReply();
@@ -565,6 +567,75 @@ void TestScanJob::managerQueuesScans()
     QCOMPARE(finished.at(1).at(1).value<ScanManager::Origin>(), ScanManager::Origin::Usb);
     QCOMPARE(finished.at(1).at(0).value<ScanSummary>().infected, qint64(1));
     QVERIFY(!manager.isScanning());
+}
+
+void TestScanJob::managerRestartsAfterCancel()
+{
+    FakeClamd clamd(socketPath(), QByteArrayLiteral("PONG\0"));
+    for (int i = 0; i < 50; ++i)
+        writeFile(m_root + QStringLiteral("/f%1.txt").arg(i), "x");
+
+    ClamdClient client;
+    client.setSocketPath(socketPath());
+    ScanManager manager(&client);
+    QSignalSpy started(&manager, &ScanManager::scanStarted);
+    QSignalSpy finished(&manager, &ScanManager::scanFinished);
+
+    // Arrêtée puis relancée aussitôt : l'analyse en train de s'arrêter ne
+    // compte pas comme la même demande.
+    manager.scan({m_root}, ScanManager::Origin::Manual);
+    manager.cancelAll();
+    manager.scan({m_root}, ScanManager::Origin::Manual);
+
+    QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 2, 10000);
+    QCOMPARE(started.count(), 2);
+    QVERIFY(finished.at(0).at(0).value<ScanSummary>().cancelled);
+    const ScanSummary second = finished.at(1).at(0).value<ScanSummary>();
+    QVERIFY(!second.cancelled);
+    QCOMPARE(second.scanned, qint64(50));
+}
+
+void TestScanJob::managerDistinguishesQuickScan()
+{
+    FakeClamd clamd(socketPath(), QByteArrayLiteral("PONG\0"));
+    const QString first = m_root + QStringLiteral("/premier.txt");
+    const QString second = m_root + QStringLiteral("/second.txt");
+    writeFile(first, "x");
+    writeFile(second, "x");
+
+    ClamdClient client;
+    client.setSocketPath(socketPath());
+    ScanManager manager(&client);
+    QSignalSpy started(&manager, &ScanManager::scanStarted);
+    QSignalSpy finished(&manager, &ScanManager::scanFinished);
+    // Les emplacements sensibles réels (/tmp, programmes en cours) ne sont
+    // pas analysés ici : l'analyse rapide est arrêtée dès son lancement.
+    connect(&manager, &ScanManager::scanStarted, this, [&manager](const QStringList &, ScanManager::Origin origin) {
+        if (origin == ScanManager::Origin::Quick)
+            manager.cancelAll();
+    });
+
+    // En cours : l'analyse du seul dossier ne couvre pas l'analyse rapide.
+    manager.scan({first}, ScanManager::Origin::Manual);
+    manager.scan({first}, ScanManager::Origin::Quick, true);
+    QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 2, 10000);
+    QCOMPARE(started.count(), 2);
+    QCOMPARE(started.at(1).at(1).value<ScanManager::Origin>(), ScanManager::Origin::Quick);
+    QVERIFY(finished.at(1).at(0).value<ScanSummary>().systemAreas);
+
+    // En attente : la demande sans emplacements sensibles devient l'analyse
+    // rapide, et une nouvelle analyse du seul dossier est alors couverte.
+    manager.scan({second}, ScanManager::Origin::Manual);
+    manager.scan({first}, ScanManager::Origin::Manual);
+    manager.scan({first}, ScanManager::Origin::Quick, true);
+    manager.scan({first}, ScanManager::Origin::Manual);
+    QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 4, 10000);
+    QCOMPARE(started.count(), 4);
+    QCOMPARE(started.at(3).at(0).toStringList(), QStringList{first});
+    QCOMPARE(started.at(3).at(1).value<ScanManager::Origin>(), ScanManager::Origin::Quick);
+    QVERIFY(finished.at(3).at(0).value<ScanSummary>().systemAreas);
+    QTest::qWait(200);
+    QCOMPARE(started.count(), 4);
 }
 
 void TestScanJob::managerAppliesOptions()
